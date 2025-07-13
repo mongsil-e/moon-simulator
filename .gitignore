@@ -1,0 +1,6 @@
+# HTML files
+*.html
+
+# Virtual environment
+venv/
+__pycache__/ 

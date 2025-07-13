@@ -1,2 +1,4 @@
 skyfield==1.53
-pytz 
+pytz
+folium
+numpy==1.26.4 
