@@ -21,6 +21,11 @@
             padding: 10px;
             background-color: #f8f9fa;
         }
+        .moon-icon {
+            font-size: 20px;
+            background: none;
+            border: none;
+        }
     </style>
 </head>
 <body>
@@ -59,9 +64,29 @@
     }).addTo(map);
 
     var layers = L.layerGroup().addTo(map);
+    var rightClickMarker;
+
+    map.on('contextmenu', function(e) {
+        var lat = e.latlng.lat.toFixed(6);
+        var lon = e.latlng.lng.toFixed(6);
+
+        document.getElementById('lat').value = lat;
+        document.getElementById('lon').value = lon;
+
+        if (rightClickMarker) {
+            map.removeLayer(rightClickMarker);
+        }
+        rightClickMarker = L.marker(e.latlng).addTo(map)
+            .bindPopup(`선택된 위치<br>위도: ${lat}<br>경도: ${lon}`)
+            .openPopup();
+    });
 
     document.getElementById('location-form').addEventListener('submit', function(event) {
         event.preventDefault();
+        
+        if (rightClickMarker) {
+            map.removeLayer(rightClickMarker);
+        }
         layers.clearLayers();
 
         const lat = document.getElementById('lat').value;
@@ -115,6 +140,14 @@
                     { color: line_color, weight: line_weight }
                 ).addTo(layers)
                 .bindTooltip(`<b>시간: ${pos.time} (KST)</b><br>방위각: ${pos.azimuth.toFixed(2)}°<br>고도: ${pos.altitude.toFixed(2)}°`);
+
+                // 달 이모티콘 마커 추가
+                var moonIcon = L.divIcon({
+                    html: '🌕',
+                    className: 'moon-icon',
+                    iconSize: [50, 50],
+                });
+                L.marker([pos.dest_lat, pos.dest_lon], { icon: moonIcon }).addTo(layers);
             });
         })
         .catch(error => {

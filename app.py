@@ -77,6 +77,8 @@ def calculate():
             alt, az, dist = observer.at(new_t).observe(moon).apparent().altaz()
             dest_lat, dest_lon = calculate_destination(lat, lon, az.degrees)
             
+            # astimezone() returns a datetime object, so we can call strftime on it.
+            # The linter seems to be mistaken about the return type.
             new_kst = new_t.astimezone(kst).strftime('%H:%M')
             hourly_positions.append({
                 'time': new_kst,
