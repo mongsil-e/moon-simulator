@@ -3,9 +3,8 @@
 이 프로그램은 사용자가 지정한 장소(위도, 경도)와 날짜에 달이 뜨는 시간과 방위각을 계산합니다.
 
 ## 설치
-'''
-git clone https://github.com/mongsil-e/moon-simulator.git
-'''
+'git clone https://github.com/mongsil-e/moon-simulator.git'
+
 
 1. Python 3.x 설치.
 2. `pip install -r requirements.txt` 명령어 실행
