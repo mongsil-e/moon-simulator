@@ -42,6 +42,10 @@
             <input type="text" class="form-control" id="lon" placeholder="예: 126.9780" value="126.9780">
         </div>
         <div class="col-auto">
+            <label for="elevation" class="form-label">고도(m)</label>
+            <input type="number" class="form-control" id="elevation" placeholder="예: 0" value="0">
+        </div>
+        <div class="col-auto">
             <label for="date" class="form-label">날짜</label>
             <input type="date" class="form-control" id="date">
         </div>
@@ -92,6 +96,7 @@
         const lat = document.getElementById('lat').value;
         const lon = document.getElementById('lon').value;
         const date = document.getElementById('date').value;
+        const elevation = document.getElementById('elevation').value;
         const resultDiv = document.getElementById('result');
 
         if (!lat || !lon || !date) {
@@ -106,7 +111,7 @@
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ lat, lon, date }),
+            body: JSON.stringify({ lat, lon, date, elevation }),
         })
         .then(response => response.json())
         .then(data => {
@@ -118,37 +123,74 @@
             const location = data.location;
             map.setView([location.lat, location.lon], 12);
 
-            const popup_text = `
-                <b>월출 정보</b><br>
-                월출 시간 (KST): ${data.moonrise_time_kst}<br>
-                월출 방위각: ${data.moonrise_azimuth.toFixed(2)}°
-            `;
-            resultDiv.innerHTML = popup_text.replace(/<br>/g, ' | ');
+            let resultHtml = '<div class="card"><div class="card-body">';
+            if (data.moon_phase) {
+                resultHtml += `
+                    <h5 class="card-title">달 정보 (${data.date})</h5>
+                    <p class="card-text">
+                        <strong>위상:</strong> ${data.moon_phase.name_korean} (밝기: ${data.moon_phase.illumination.toFixed(1)}%)
+                    </p>
+                `;
+            }
+            if (data.moonrise_time_kst) {
+                resultHtml += `
+                    <p class="card-text">
+                        <strong>월출:</strong> ${data.moonrise_time_kst} (KST), <strong>방위각:</strong> ${data.moonrise_azimuth.toFixed(2)}°
+                    </p>
+                `;
+            }
+            if (data.moonset_time_kst) {
+                resultHtml += `
+                    <p class="card-text">
+                        <strong>월몰:</strong> ${data.moonset_time_kst} (KST), <strong>방위각:</strong> ${data.moonset_azimuth.toFixed(2)}°
+                    </p>
+                `;
+            }
+            if (!data.moonrise_time_kst && !data.moonset_time_kst) {
+                 resultHtml += `<p class="card-text">해당 날짜에 월출/월몰 정보가 없습니다.</p>`;
+            }
+            resultHtml += '</div></div>';
+            resultDiv.innerHTML = resultHtml;
 
+
+            const popup_text = `<b>현재 위치</b>`;
             L.marker([location.lat, location.lon])
                 .addTo(layers)
                 .bindPopup(popup_text)
                 .bindTooltip("현재 위치")
                 .openPopup();
 
-            data.hourly_positions.forEach((pos, i) => {
-                const line_color = i === 0 ? "red" : "orange";
-                const line_weight = i === 0 ? 5 : 3;
+            if(data.hourly_positions) {
+                data.hourly_positions.forEach((pos, i) => {
+                    // 달의 가시성에 따른 색상 결정
+                    const isVisible = pos.altitude > 0;
+                    const line_color = isVisible ? (i === 0 ? "red" : "orange") : "gray";
+                    const line_weight = isVisible ? (i === 0 ? 5 : 3) : 2;
+                    const line_opacity = isVisible ? 1.0 : 0.5;
 
-                L.polyline(
-                    [[location.lat, location.lon], [pos.dest_lat, pos.dest_lon]],
-                    { color: line_color, weight: line_weight }
-                ).addTo(layers)
-                .bindTooltip(`<b>시간: ${pos.time} (KST)</b><br>방위각: ${pos.azimuth.toFixed(2)}°<br>고도: ${pos.altitude.toFixed(2)}°`);
+                    L.polyline(
+                        [[location.lat, location.lon], [pos.dest_lat, pos.dest_lon]],
+                        { 
+                            color: line_color, 
+                            weight: line_weight,
+                            opacity: line_opacity,
+                            dashArray: isVisible ? null : '5, 5'  // 지평선 아래일 때 점선으로 표시
+                        }
+                    ).addTo(layers)
+                    .bindTooltip(`<b>시간: ${pos.time} (KST)</b><br>방위각: ${pos.azimuth.toFixed(2)}°<br>고도: ${pos.altitude.toFixed(2)}°<br>${isVisible ? '달이 보임' : '달이 지평선 아래'}`);
 
-                // 달 이모티콘 마커 추가
-                var moonIcon = L.divIcon({
-                    html: '🌕',
-                    className: 'moon-icon',
-                    iconSize: [50, 50],
+                    // 달 아이콘 - 가시성에 따라 다른 아이콘 사용
+                    const moonEmoji = isVisible ? '🌕' : '🌑';  // 보일 때는 밝은 달, 안 보일 때는 어두운 달
+                    const iconOpacity = isVisible ? 1.0 : 0.4;
+                    
+                    var moonIcon = L.divIcon({
+                        html: `<span style="opacity: ${iconOpacity};">${moonEmoji}</span>`,
+                        className: 'moon-icon',
+                        iconSize: [50, 50],
+                    });
+                    L.marker([pos.dest_lat, pos.dest_lon], { icon: moonIcon }).addTo(layers);
                 });
-                L.marker([pos.dest_lat, pos.dest_lon], { icon: moonIcon }).addTo(layers);
-            });
+            }
         })
         .catch(error => {
             console.error('Error:', error);

@@ -14,16 +14,33 @@ earth = planets['earth']
 moon = planets['moon']
 ts = load.timescale()
 
-def calculate_moonrise(ts, topos, date, planets, moon):
+def find_moon_events(ts, topos, date, planets, moon):
+    """주어진 날짜의 월출 및 월몰 시간을 찾습니다."""
     t0 = ts.utc(date.year, date.month, date.day)
     t1 = ts.utc(date.year, date.month, date.day + 1)
-    
     t, y = almanac.find_discrete(t0, t1, almanac.risings_and_settings(planets, moon, topos))
     
-    for ti, yi in zip(t, y):
-        if yi:  # True for rising
-            return ti
-    return None
+    events = {'rise': None, 'set': None}
+    # y=True (1) is rise, y=False (0) is set.
+    for ti, yi in zip(t,y):
+        if yi and events['rise'] is None:
+            events['rise'] = ti
+        elif not yi and events['set'] is None:
+            events['set'] = ti
+        if events['rise'] is not None and events['set'] is not None:
+            break
+    return events
+
+def get_moon_phase_kr(angle_degrees):
+    """달의 위상 각도를 한국어 이름으로 변환합니다."""
+    if angle_degrees < 5: return "삭 (New Moon)"
+    if angle_degrees < 85: return "초승달 (Waxing Crescent)"
+    if angle_degrees <= 95: return "상현 (First Quarter)"
+    if angle_degrees < 175: return "차가는 달 (Waxing Gibbous)"
+    if angle_degrees <= 185: return "망 (Full Moon)"
+    if angle_degrees < 265: return "기우는 달 (Waning Gibbous)"
+    if angle_degrees <= 275: return "하현 (Last Quarter)"
+    return "그믐달 (Waning Crescent)"
 
 def calculate_destination(lat, lon, bearing, distance_km=5):
     """
@@ -51,34 +68,55 @@ def calculate():
     try:
         lat = float(data['lat'])
         lon = float(data['lon'])
+        elevation = float(data.get('elevation', 0))
         date_str = data['date']
         date = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
     except (ValueError, KeyError):
         return jsonify({'error': 'Invalid input data'}), 400
 
-    topos = wgs84.latlon(lat * N, lon * E)
+    topos = wgs84.latlon(lat * N, lon * E, elevation_m=elevation)
     observer = earth + topos
     
-    ti = calculate_moonrise(ts, topos, date, planets, moon)
+    kst = pytz.timezone('Asia/Seoul')
+    events = find_moon_events(ts, topos, date, planets, moon)
+    ti_rise = events.get('rise')
+    ti_set = events.get('set')
+
+    if ti_rise is None and ti_set is None:
+        return jsonify({'error': f'{date_str}에 달의 출몰 정보가 없습니다.'})
+
+    response = {
+        'location': {'lat': lat, 'lon': lon},
+        'date': date_str,
+        'moonrise_time_kst': None,
+        'moonrise_azimuth': None,
+        'moonset_time_kst': None,
+        'moonset_azimuth': None,
+        'moon_phase': None,
+        'hourly_positions': None
+    }
     
-    if ti is not None:
-        kst = pytz.timezone('Asia/Seoul')
-        kst_time_str = ti.astimezone(kst).strftime('%Y-%m-%d %H:%M:%S')
-        
-        alt, az, dist = observer.at(ti).observe(moon).apparent().altaz()
-        az_degrees = az.degrees
+    # 달 위상은 월출 또는 월몰 시간 중 빠른 시간을 기준으로 계산
+    ref_time = ti_rise if ti_rise is not None and (ti_set is None or ti_rise.tt < ti_set.tt) else ti_set
+    if ref_time is not None:
+        illumination = almanac.fraction_illuminated(planets, 'moon', ref_time)
+        phase_angle = almanac.moon_phase(planets, ref_time).degrees
+        response['moon_phase'] = {
+            'illumination': illumination * 100,
+            'name_korean': get_moon_phase_kr(phase_angle)
+        }
+
+    if ti_rise is not None:
+        response['moonrise_time_kst'] = ti_rise.astimezone(kst).strftime('%Y-%m-%d %H:%M:%S')
+        alt, az, dist = observer.at(ti_rise).observe(moon).apparent().altaz()
+        response['moonrise_azimuth'] = az.degrees
         
         hourly_positions = []
-        for i in range(9):  # 0 to 8 hours
-            delta_hours = i / 24.0
-            new_tt = ti.tt + delta_hours
-            new_t = ts.tt_jd(new_tt)
-            
+        for i in range(9):  # 월출 후 8시간 동안의 위치
+            new_t = ts.tt_jd(ti_rise.tt + i / 24.0)
             alt, az, dist = observer.at(new_t).observe(moon).apparent().altaz()
             dest_lat, dest_lon = calculate_destination(lat, lon, az.degrees)
             
-            # astimezone() returns a datetime object, so we can call strftime on it.
-            # The linter seems to be mistaken about the return type.
             new_kst = new_t.astimezone(kst).strftime('%H:%M')
             hourly_positions.append({
                 'time': new_kst,
@@ -87,15 +125,15 @@ def calculate():
                 'dest_lat': dest_lat,
                 'dest_lon': dest_lon
             })
-        
-        return jsonify({
-            'location': {'lat': lat, 'lon': lon},
-            'moonrise_time_kst': kst_time_str,
-            'moonrise_azimuth': az_degrees,
-            'hourly_positions': hourly_positions
-        })
-    else:
-        return jsonify({'error': '해당 날짜에 달 뜨는 정보가 없습니다.'})
+        response['hourly_positions'] = hourly_positions
+
+    if ti_set is not None:
+        response['moonset_time_kst'] = ti_set.astimezone(kst).strftime('%Y-%m-%d %H:%M:%S')
+        alt, az, dist = observer.at(ti_set).observe(moon).apparent().altaz()
+        response['moonset_azimuth'] = az.degrees
+
+    return jsonify(response)
+
 
 if __name__ == "__main__":
     app.run(debug=True) 
