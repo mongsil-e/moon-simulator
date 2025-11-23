@@ -1,20 +1,23 @@
 <!DOCTYPE html>
 <html lang="ko">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Moon Simulator - Premium Edition</title>
-    
+
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
-    
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Orbitron:wght@400;700&display=swap"
+        rel="stylesheet">
+
     <!-- Libraries -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js"></script>
-    
+
     <style>
         :root {
             --bg-color: #0b0d17;
@@ -38,7 +41,11 @@
             background-image: radial-gradient(circle at 50% 50%, #1a1d2e 0%, #0b0d17 100%);
         }
 
-        h1, h2, h3, h4, h5 {
+        h1,
+        h2,
+        h3,
+        h4,
+        h5 {
             font-family: 'Orbitron', sans-serif;
             letter-spacing: 1px;
         }
@@ -61,7 +68,7 @@
             border-right: 1px solid var(--border-color);
             overflow-y: auto;
             z-index: 1000;
-            box-shadow: 5px 0 15px rgba(0,0,0,0.3);
+            box-shadow: 5px 0 15px rgba(0, 0, 0, 0.3);
         }
 
         .map-container {
@@ -156,23 +163,79 @@
             color: #fff;
         }
 
+        /* Bookmarks */
+        .bookmark-list {
+            list-style: none;
+            padding: 0;
+            margin-top: 1rem;
+            max-height: 150px;
+            overflow-y: auto;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .bookmark-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 1rem;
+            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .bookmark-item:last-child {
+            border-bottom: none;
+        }
+
+        .bookmark-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .bookmark-name {
+            font-size: 0.9rem;
+            color: var(--text-color);
+        }
+
+        .bookmark-delete {
+            color: #ff6b6b;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        .bookmark-delete:hover {
+            background: rgba(255, 107, 107, 0.2);
+        }
+
         /* Animations */
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         /* Scrollbar */
         ::-webkit-scrollbar {
             width: 8px;
         }
+
         ::-webkit-scrollbar-track {
             background: #0b0d17;
         }
+
         ::-webkit-scrollbar-thumb {
             background: #2d3748;
             border-radius: 4px;
         }
+
         ::-webkit-scrollbar-thumb:hover {
             background: #4a5568;
         }
@@ -184,15 +247,16 @@
             color: white;
             border-radius: 8px;
         }
+
         .leaflet-popup-tip {
             background: rgba(11, 13, 23, 0.9);
         }
-        
+
         .moon-icon {
             font-size: 24px;
             text-align: center;
             line-height: 24px;
-            filter: drop-shadow(0 0 5px rgba(255,255,255,0.5));
+            filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.5));
         }
 
         /* Responsive */
@@ -200,11 +264,13 @@
             .main-container {
                 flex-direction: column;
             }
+
             .sidebar {
                 width: 100%;
                 height: 50%;
                 order: 2;
             }
+
             .map-container {
                 height: 50%;
                 order: 1;
@@ -212,130 +278,213 @@
         }
     </style>
 </head>
+
 <body>
 
-<div class="main-container">
-    <div class="sidebar">
-        <h2 class="mb-4 text-center">Moon Simulator</h2>
-        
-        <form id="location-form">
-            <div class="mb-3">
-                <label for="lat" class="form-label">위도 (Latitude)</label>
-                <input type="number" step="any" class="form-control" id="lat" placeholder="37.5665" value="37.5665" required>
-            </div>
-            <div class="mb-3">
-                <label for="lon" class="form-label">경도 (Longitude)</label>
-                <input type="number" step="any" class="form-control" id="lon" placeholder="126.9780" value="126.9780" required>
-            </div>
-            <div class="mb-3">
-                <label for="elevation" class="form-label">고도 (Elevation, m)</label>
-                <input type="number" class="form-control" id="elevation" placeholder="0" value="0">
-            </div>
-            <div class="mb-3">
-                <label for="date" class="form-label">날짜 (Date)</label>
-                <input type="date" class="form-control" id="date" required>
-            </div>
-            
-            <button type="submit" class="btn btn-primary">
-                <span id="btn-text">계산하기 (Calculate)</span>
-                <span id="btn-spinner" class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
-            </button>
-        </form>
+    <div class="main-container">
+        <div class="sidebar">
+            <h2 class="mb-4 text-center">Moon Simulator</h2>
 
-        <div id="result"></div>
+            <form id="location-form">
+                <div class="mb-3">
+                    <label for="lat" class="form-label">위도 (Latitude)</label>
+                    <input type="number" step="any" class="form-control" id="lat" placeholder="37.5665" value="37.5665"
+                        required>
+                </div>
+                <div class="mb-3">
+                    <label for="lon" class="form-label">경도 (Longitude)</label>
+                    <input type="number" step="any" class="form-control" id="lon" placeholder="126.9780"
+                        value="126.9780" required>
+                </div>
+                <div class="mb-3">
+                    <label for="elevation" class="form-label">고도 (Elevation, m)</label>
+                    <input type="number" class="form-control" id="elevation" placeholder="0" value="0">
+                </div>
+                <div class="mb-3">
+                    <label for="date" class="form-label">날짜 (Date)</label>
+                    <input type="date" class="form-control" id="date" required>
+                </div>
+
+                <button type="submit" class="btn btn-primary">
+                    <span id="btn-text">계산하기 (Calculate)</span>
+                    <span id="btn-spinner" class="spinner-border spinner-border-sm d-none" role="status"
+                        aria-hidden="true"></span>
+                </button>
+            </form>
+
+            <!-- Bookmarks Section -->
+            <div class="mt-4">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h4 class="m-0" style="font-size: 1.1rem;">북마크 (Bookmarks)</h4>
+                    <button class="btn btn-sm btn-outline-light" onclick="saveBookmark()" style="font-size: 0.8rem;">
+                        + 저장
+                    </button>
+                </div>
+                <ul id="bookmark-list" class="bookmark-list">
+                    <!-- Bookmarks will be loaded here -->
+                    <li class="p-3 text-center text-muted" style="font-size: 0.85rem;">저장된 위치가 없습니다.</li>
+                </ul>
+            </div>
+
+            <div id="result"></div>
+        </div>
+
+        <div class="map-container">
+            <div id="map"></div>
+        </div>
     </div>
 
-    <div class="map-container">
-        <div id="map"></div>
-    </div>
-</div>
+    <script>
+        // Set default date to today
+        document.getElementById('date').valueAsDate = new Date();
 
-<script>
-    // Set default date to today
-    document.getElementById('date').valueAsDate = new Date();
+        // Load Bookmarks on Startup
+        loadBookmarks();
 
-    // Initialize Map (Dark Mode)
-    var map = L.map('map').setView([37.5665, 126.9780], 10);
-    
-    // CartoDB Dark Matter Tile Layer
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-        subdomains: 'abcd',
-        maxZoom: 20
-    }).addTo(map);
+        function saveBookmark() {
+            const lat = document.getElementById('lat').value;
+            const lon = document.getElementById('lon').value;
 
-    var layers = L.layerGroup().addTo(map);
-    var rightClickMarker;
-
-    // Right click to pick location
-    map.on('contextmenu', function(e) {
-        var lat = e.latlng.lat.toFixed(6);
-        var lon = e.latlng.lng.toFixed(6);
-
-        document.getElementById('lat').value = lat;
-        document.getElementById('lon').value = lon;
-
-        if (rightClickMarker) {
-            map.removeLayer(rightClickMarker);
-        }
-        
-        var customIcon = L.divIcon({
-            html: '📍',
-            className: 'moon-icon',
-            iconSize: [30, 30],
-            iconAnchor: [15, 30]
-        });
-
-        rightClickMarker = L.marker(e.latlng, {icon: customIcon}).addTo(map)
-            .bindPopup(`<b>선택된 위치</b><br>위도: ${lat}<br>경도: ${lon}`)
-            .openPopup();
-    });
-
-    document.getElementById('location-form').addEventListener('submit', function(event) {
-        event.preventDefault();
-        
-        const btnText = document.getElementById('btn-text');
-        const btnSpinner = document.getElementById('btn-spinner');
-        const resultDiv = document.getElementById('result');
-
-        // Loading State
-        btnText.textContent = '계산 중...';
-        btnSpinner.classList.remove('d-none');
-        
-        if (rightClickMarker) {
-            map.removeLayer(rightClickMarker);
-        }
-        layers.clearLayers();
-
-        const lat = document.getElementById('lat').value;
-        const lon = document.getElementById('lon').value;
-        const date = document.getElementById('date').value;
-        const elevation = document.getElementById('elevation').value;
-
-        fetch('/calculate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lat, lon, date, elevation }),
-        })
-        .then(response => response.json())
-        .then(data => {
-            // Reset Button
-            btnText.textContent = '계산하기 (Calculate)';
-            btnSpinner.classList.add('d-none');
-
-            if (data.error) {
-                resultDiv.innerHTML = `<div class="alert alert-warning mt-3">${data.error}</div>`;
+            if (!lat || !lon) {
+                alert("위도와 경도를 입력해주세요.");
                 return;
             }
 
-            const location = data.location;
-            map.setView([location.lat, location.lon], 12);
+            const name = prompt("이 위치의 이름을 입력하세요:", `위치 ${lat}, ${lon}`);
+            if (!name) return;
 
-            // Build Result HTML
-            let resultHtml = `<div class="result-card">`;
-            
-            if (data.moon_phase) {
-                resultHtml += `
+            const bookmark = { name, lat, lon };
+            let bookmarks = JSON.parse(localStorage.getItem('moonSim_bookmarks')) || [];
+            bookmarks.push(bookmark);
+            localStorage.setItem('moonSim_bookmarks', JSON.stringify(bookmarks));
+
+            loadBookmarks();
+        }
+
+        function loadBookmarks() {
+            const listEl = document.getElementById('bookmark-list');
+            const bookmarks = JSON.parse(localStorage.getItem('moonSim_bookmarks')) || [];
+
+            if (bookmarks.length === 0) {
+                listEl.innerHTML = '<li class="p-3 text-center text-muted" style="font-size: 0.85rem;">저장된 위치가 없습니다.</li>';
+                return;
+            }
+
+            listEl.innerHTML = '';
+            bookmarks.forEach((bm, index) => {
+                const li = document.createElement('li');
+                li.className = 'bookmark-item';
+                li.onclick = () => loadBookmark(index);
+                li.innerHTML = `
+                <span class="bookmark-name">${bm.name}</span>
+                <span class="bookmark-delete" onclick="deleteBookmark(event, ${index})">×</span>
+            `;
+                listEl.appendChild(li);
+            });
+        }
+
+        function loadBookmark(index) {
+            const bookmarks = JSON.parse(localStorage.getItem('moonSim_bookmarks')) || [];
+            const bm = bookmarks[index];
+            if (bm) {
+                document.getElementById('lat').value = bm.lat;
+                document.getElementById('lon').value = bm.lon;
+                map.setView([bm.lat, bm.lon], 12);
+            }
+        }
+
+        function deleteBookmark(event, index) {
+            event.stopPropagation(); // Prevent triggering loadBookmark
+            if (!confirm("정말 삭제하시겠습니까?")) return;
+
+            let bookmarks = JSON.parse(localStorage.getItem('moonSim_bookmarks')) || [];
+            bookmarks.splice(index, 1);
+            localStorage.setItem('moonSim_bookmarks', JSON.stringify(bookmarks));
+            loadBookmarks();
+        }
+
+        // Initialize Map (Dark Mode)
+        var map = L.map('map').setView([37.5665, 126.9780], 10);
+
+        // CartoDB Dark Matter Tile Layer
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+            subdomains: 'abcd',
+            maxZoom: 20
+        }).addTo(map);
+
+        var layers = L.layerGroup().addTo(map);
+        var rightClickMarker;
+
+        // Right click to pick location
+        map.on('contextmenu', function (e) {
+            var lat = e.latlng.lat.toFixed(6);
+            var lon = e.latlng.lng.toFixed(6);
+
+            document.getElementById('lat').value = lat;
+            document.getElementById('lon').value = lon;
+
+            if (rightClickMarker) {
+                map.removeLayer(rightClickMarker);
+            }
+
+            var customIcon = L.divIcon({
+                html: '📍',
+                className: 'moon-icon',
+                iconSize: [30, 30],
+                iconAnchor: [15, 30]
+            });
+
+            rightClickMarker = L.marker(e.latlng, { icon: customIcon }).addTo(map)
+                .bindPopup(`<b>선택된 위치</b><br>위도: ${lat}<br>경도: ${lon}`)
+                .openPopup();
+        });
+
+        document.getElementById('location-form').addEventListener('submit', function (event) {
+            event.preventDefault();
+
+            const btnText = document.getElementById('btn-text');
+            const btnSpinner = document.getElementById('btn-spinner');
+            const resultDiv = document.getElementById('result');
+
+            // Loading State
+            btnText.textContent = '계산 중...';
+            btnSpinner.classList.remove('d-none');
+
+            if (rightClickMarker) {
+                map.removeLayer(rightClickMarker);
+            }
+            layers.clearLayers();
+
+            const lat = document.getElementById('lat').value;
+            const lon = document.getElementById('lon').value;
+            const date = document.getElementById('date').value;
+            const elevation = document.getElementById('elevation').value;
+
+            fetch('/calculate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ lat, lon, date, elevation }),
+            })
+                .then(response => response.json())
+                .then(data => {
+                    // Reset Button
+                    btnText.textContent = '계산하기 (Calculate)';
+                    btnSpinner.classList.add('d-none');
+
+                    if (data.error) {
+                        resultDiv.innerHTML = `<div class="alert alert-warning mt-3">${data.error}</div>`;
+                        return;
+                    }
+
+                    const location = data.location;
+                    map.setView([location.lat, location.lon], 12);
+
+                    // Build Result HTML
+                    let resultHtml = `<div class="result-card">`;
+
+                    if (data.moon_phase) {
+                        resultHtml += `
                     <div class="moon-phase-display">
                         <div class="moon-emoji">🌕</div>
                         <div>
@@ -344,11 +493,11 @@
                         </div>
                     </div>
                 `;
-            }
+                    }
 
-            resultHtml += `<div class="mt-3">`;
-            if (data.moonrise_time_kst) {
-                resultHtml += `
+                    resultHtml += `<div class="mt-3">`;
+                    if (data.moonrise_time_kst) {
+                        resultHtml += `
                     <div class="data-row">
                         <span class="data-label">월출 (Moonrise)</span>
                         <span class="data-value">${data.moonrise_time_kst.split(' ')[1]}</span>
@@ -358,10 +507,10 @@
                         <span class="data-value">${data.moonrise_azimuth.toFixed(1)}°</span>
                     </div>
                 `;
-            }
-            
-            if (data.moonset_time_kst) {
-                resultHtml += `
+                    }
+
+                    if (data.moonset_time_kst) {
+                        resultHtml += `
                     <div class="data-row">
                         <span class="data-label">월몰 (Moonset)</span>
                         <span class="data-value">${data.moonset_time_kst.split(' ')[1]}</span>
@@ -371,73 +520,87 @@
                         <span class="data-value">${data.moonset_azimuth.toFixed(1)}°</span>
                     </div>
                 `;
-            }
-            
-            if (!data.moonrise_time_kst && !data.moonset_time_kst) {
-                resultHtml += `<p class="text-center text-muted">해당 날짜에 월출/월몰 정보가 없습니다.</p>`;
-            }
-            resultHtml += `</div></div>`;
-            
-            resultDiv.innerHTML = resultHtml;
+                    }
 
-            // Map Markers
-            const userIcon = L.divIcon({
-                html: '🏠',
-                className: 'moon-icon',
-                iconSize: [30, 30],
-                iconAnchor: [15, 15]
-            });
+                    if (!data.moonrise_time_kst && !data.moonset_time_kst) {
+                        resultHtml += `<p class="text-center text-muted">해당 날짜에 월출/월몰 정보가 없습니다.</p>`;
+                    }
+                    resultHtml += `</div></div>`;
 
-            L.marker([location.lat, location.lon], {icon: userIcon})
-                .addTo(layers)
-                .bindPopup("<b>현재 위치</b>")
-                .openPopup();
+                    resultDiv.innerHTML = resultHtml;
 
-            if(data.hourly_positions) {
-                data.hourly_positions.forEach((pos, i) => {
-                    const isVisible = pos.altitude > 0;
-                    const line_color = isVisible ? (i === 0 ? "#ff9f43" : "#feca57") : "#576574";
-                    const line_weight = isVisible ? (i === 0 ? 4 : 2) : 1;
-                    const line_opacity = isVisible ? 1.0 : 0.4;
+                    // Map Markers
+                    const userIcon = L.divIcon({
+                        html: '🏠',
+                        className: 'moon-icon',
+                        iconSize: [30, 30],
+                        iconAnchor: [15, 15]
+                    });
 
-                    L.polyline(
-                        [[location.lat, location.lon], [pos.dest_lat, pos.dest_lon]],
-                        { 
-                            color: line_color, 
-                            weight: line_weight,
-                            opacity: line_opacity,
-                            dashArray: isVisible ? null : '5, 5'
-                        }
-                    ).addTo(layers)
-                    .bindTooltip(`
+                    L.marker([location.lat, location.lon], { icon: userIcon })
+                        .addTo(layers)
+                        .bindPopup("<b>현재 위치</b>")
+                        .openPopup();
+
+                    if (data.hourly_positions) {
+                        data.hourly_positions.forEach((pos, i) => {
+                            const isVisible = pos.altitude > 0;
+                            const line_color = isVisible ? (i === 0 ? "#ff9f43" : "#feca57") : "#576574";
+                            const line_weight = isVisible ? (i === 0 ? 4 : 2) : 1;
+                            const line_opacity = isVisible ? 1.0 : 0.4;
+
+                            // 1. Visible Line
+                            L.polyline(
+                                [[location.lat, location.lon], [pos.dest_lat, pos.dest_lon]],
+                                {
+                                    color: line_color,
+                                    weight: line_weight,
+                                    opacity: line_opacity,
+                                    dashArray: isVisible ? null : '5, 5',
+                                    interactive: false
+                                }
+                            ).addTo(layers);
+
+                            // 2. Invisible Hit-Area Line (Buffer)
+                            L.polyline(
+                                [[location.lat, location.lon], [pos.dest_lat, pos.dest_lon]],
+                                {
+                                    color: 'transparent',
+                                    weight: 20,
+                                    opacity: 0,
+                                    interactive: true
+                                }
+                            ).addTo(layers)
+                                .bindTooltip(`
                         <div style="text-align:center;">
                             <b>${pos.time}</b><br>
                             Az: ${pos.azimuth.toFixed(1)}°<br>
                             Alt: ${pos.altitude.toFixed(1)}°
                         </div>
-                    `, {direction: 'top'});
+                    `, { direction: 'top', sticky: true });
 
-                    const moonEmoji = isVisible ? '🌕' : '🌑';
-                    const iconOpacity = isVisible ? 1.0 : 0.5;
-                    
-                    var moonIcon = L.divIcon({
-                        html: `<span style="opacity: ${iconOpacity}; font-size: 20px;">${moonEmoji}</span>`,
-                        className: 'moon-icon',
-                        iconSize: [20, 20],
-                        iconAnchor: [10, 10]
-                    });
-                    L.marker([pos.dest_lat, pos.dest_lon], { icon: moonIcon }).addTo(layers);
+                            const moonEmoji = isVisible ? '🌕' : '🌑';
+                            const iconOpacity = isVisible ? 1.0 : 0.5;
+
+                            var moonIcon = L.divIcon({
+                                html: `<span style="opacity: ${iconOpacity}; font-size: 20px;">${moonEmoji}</span>`,
+                                className: 'moon-icon',
+                                iconSize: [20, 20],
+                                iconAnchor: [10, 10]
+                            });
+                            L.marker([pos.dest_lat, pos.dest_lon], { icon: moonIcon }).addTo(layers);
+                        });
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    btnText.textContent = '계산하기 (Calculate)';
+                    btnSpinner.classList.add('d-none');
+                    resultDiv.innerHTML = `<div class="alert alert-danger mt-3">오류가 발생했습니다.</div>`;
                 });
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            btnText.textContent = '계산하기 (Calculate)';
-            btnSpinner.classList.add('d-none');
-            resultDiv.innerHTML = `<div class="alert alert-danger mt-3">오류가 발생했습니다.</div>`;
         });
-    });
-</script>
+    </script>
 
 </body>
+
 </html>
