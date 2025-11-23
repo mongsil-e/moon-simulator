@@ -9,15 +9,22 @@ from skyfield.api import E, N, load, wgs84
 app = Flask(__name__)
 
 # Skyfield 객체 전역 로드
-planets = load('de421.bsp')
+planets = load('de440.bsp')
 earth = planets['earth']
 moon = planets['moon']
 ts = load.timescale()
 
 def find_moon_events(ts, topos, date, planets, moon):
-    """주어진 날짜의 월출 및 월몰 시간을 찾습니다."""
-    t0 = ts.utc(date.year, date.month, date.day)
-    t1 = ts.utc(date.year, date.month, date.day + 1)
+    """주어진 날짜(KST 기준)의 월출 및 월몰 시간을 찾습니다."""
+    kst = pytz.timezone('Asia/Seoul')
+    # KST 날짜의 시작과 끝을 UTC로 변환
+    start_of_day = kst.localize(datetime.datetime.combine(date, datetime.time.min))
+    # 다음날 0시까지 검색 범위를 잡아서 24시간을 커버
+    end_of_day = start_of_day + datetime.timedelta(days=1)
+    
+    t0 = ts.from_datetime(start_of_day)
+    t1 = ts.from_datetime(end_of_day)
+    
     t, y = almanac.find_discrete(t0, t1, almanac.risings_and_settings(planets, moon, topos))
     
     events = {'rise': None, 'set': None}
@@ -136,4 +143,4 @@ def calculate():
 
 
 if __name__ == "__main__":
-    app.run(debug=True) 
+    app.run(debug=True)
