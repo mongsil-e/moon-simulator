@@ -77,6 +77,7 @@ def calculate():
         lon = float(data['lon'])
         elevation = float(data.get('elevation', 0))
         date_str = data['date']
+        duration = int(data.get('duration', 8))
         date = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
     except (ValueError, KeyError):
         return jsonify({'error': 'Invalid input data'}), 400
@@ -100,7 +101,8 @@ def calculate():
         'moonset_time_kst': None,
         'moonset_azimuth': None,
         'moon_phase': None,
-        'hourly_positions': None
+        'hourly_positions': None,
+        'recommendation': None
     }
     
     # 달 위상은 월출 또는 월몰 시간 중 빠른 시간을 기준으로 계산
@@ -110,7 +112,8 @@ def calculate():
         phase_angle = almanac.moon_phase(planets, ref_time).degrees
         response['moon_phase'] = {
             'illumination': illumination * 100,
-            'name_korean': get_moon_phase_kr(phase_angle)
+            'name_korean': get_moon_phase_kr(phase_angle),
+            'phase_angle': phase_angle
         }
 
     if ti_rise is not None:
@@ -119,7 +122,10 @@ def calculate():
         response['moonrise_azimuth'] = az.degrees
         
         hourly_positions = []
-        for i in range(9):  # 월출 후 8시간 동안의 위치
+        max_alt = -999
+        max_alt_time = None
+
+        for i in range(duration + 1):  # 사용자 설정 시간만큼 반복
             new_t = ts.tt_jd(ti_rise.tt + i / 24.0)
             alt, az, dist = observer.at(new_t).observe(moon).apparent().altaz()
             dest_lat, dest_lon = calculate_destination(lat, lon, az.degrees)
@@ -132,7 +138,21 @@ def calculate():
                 'dest_lat': dest_lat,
                 'dest_lon': dest_lon
             })
+
+            if alt.degrees > max_alt:
+                max_alt = alt.degrees
+                max_alt_time = new_kst
+
         response['hourly_positions'] = hourly_positions
+        
+        # Recommendation Logic
+        rec_msg = []
+        rise_time_str = ti_rise.astimezone(kst).strftime('%H:%M')
+        rec_msg.append(f"월출 직후({rise_time_str})는 달이 커보이는 '달 착시'를 즐기기 좋습니다.")
+        if max_alt > 0:
+             rec_msg.append(f"가장 높이 뜨는 {max_alt_time} (고도 {max_alt:.1f}°)에 가장 선명하게 보입니다.")
+        
+        response['recommendation'] = " ".join(rec_msg)
 
     if ti_set is not None:
         response['moonset_time_kst'] = ti_set.astimezone(kst).strftime('%Y-%m-%d %H:%M:%S')
