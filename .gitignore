@@ -1,3 +1,11 @@
 # Virtual environment
 venv/
-__pycache__/ 
+.venv/
+__pycache__/
+.pytest_cache/
+.runtime/
+.env
+.env.*
+!.env.example
+de421.bsp
+ 

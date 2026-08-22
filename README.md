@@ -1,34 +1,163 @@
-# Moon Rise Simulator
+# 달빛 나침반
 
-이 프로그램은 사용자가 지정한 장소(위도, 경도)와 날짜에 달이 뜨는 시간과 방위각을 계산합니다.
+현재 서 있는 위치에서 달이 어느 방향, 어느 높이에 있는지 3차원 하늘과 지도에서 확인하는 웹 시뮬레이터입니다. 브라우저의 위치 권한을 허용하면 현재 좌표를 자동으로 가져오고, 선택한 시각의 달 위치를 정밀 천체력으로 계산합니다.
+
+## 주요 기능
+
+- 현재 위치를 이용한 달의 방위각과 고도 계산
+- 북·동·남·서와 고도 눈금이 있는 3차원 하늘
+- 지도 위 진북 기준 방향선과 시야 부채꼴
+- 같은 날짜의 15분 단위 이동 궤적과 시간 재생
+- 월출·월몰 시각, 달의 위상, 밝은 면 비율, 거리 표시
+- 지도 선택과 위도·경도 직접 입력
+- 지도 좌표의 네이버 거리뷰에서 달 방향·높이를 실시간으로 확인
+- 지원하는 휴대전화에서 방향 센서와 3차원 화면 정렬
+- 데스크톱과 모바일 화면에 맞춘 반응형 대시보드
 
 ## 설치
-`git clone https://github.com/mongsil-e/moon-simulator.git`
 
+Python 3.10 이상을 권장합니다. `de440.bsp`는 용량이 큰 Git LFS 파일이므로 저장소를 새로 받았다면 Git LFS도 필요합니다.
 
-1. Python 3.x 설치.
-2. `pip install -r requirements.txt` 명령어 실행
+```powershell
+git lfs install
+git clone https://github.com/mongsil-e/moon-simulator.git
+cd moon-simulator
+git lfs pull
+
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+천체력 파일이 정상적으로 받아졌는지는 다음 명령으로 확인할 수 있습니다.
+
+```powershell
+Get-Item .\de440.bsp | Select-Object Name, Length
+```
+
+파일 크기는 약 120MB입니다. 몇 KB 정도라면 Git LFS 포인터만 받은 상태이므로 `git lfs pull`을 다시 실행해 주세요.
+
+네이버 거리뷰를 쓰려면 [네이버 클라우드 플랫폼 Maps](https://console.ncloud.com/maps/subscription)에서 Web Dynamic Map 애플리케이션을 만들고, 프로젝트 폴더의 `.env.example`을 `.env`로 복사한 뒤 키를 넣습니다.
+
+```
+NAVER_MAPS_CLIENT_ID=발급받은 Client ID
+NAVER_MAPS_CLIENT_SECRET=발급받은 Client Secret
+```
+
+애플리케이션의 웹 서비스 URL에는 `http://127.0.0.1:5000`과 `http://localhost:5000`을 등록해야 합니다. Client Secret은 서버에만 두고, 브라우저에는 Client ID만 전달합니다.
+
+## 실행
+
+```powershell
+python app.py
+```
+
+브라우저에서 [http://127.0.0.1:5000](http://127.0.0.1:5000)을 엽니다.
 
 ## 사용법
-1. `python app.py` 실행.
-2. `https://127.0.0.1:5000` 에서 실행됩니다.
-3. 위도, 경도, 날짜를 순서대로 입력.
-4. 지도에 마우스 우클릭으로 위도 경도 입력가능
-   
 
+1. 지도 위 `내 위치`를 누르고 브라우저의 위치 권한을 허용합니다. 지도를 누르거나 위도·경도를 직접 입력해도 됩니다.
+2. 3차원 화면에서 달과 이동 궤적을 확인합니다. 화면을 드래그하면 시선을 돌릴 수 있고, 휠로 확대하거나 축소할 수 있습니다.
+3. `달 바라보기`를 누르면 선택한 시각의 달 방향으로 화면이 즉시 돌아갑니다.
+4. 시간 막대를 움직이거나 재생 버튼을 누르면 3차원 달, 지도 방향선, 방위각과 고도가 함께 바뀝니다.
+5. 다른 장소를 보고 싶다면 지도를 누르거나 위도와 경도를 직접 입력한 뒤 `달 찾기`를 누릅니다. 거리뷰로 보려면 `거리뷰 보기`를 따로 누릅니다.
+6. 휴대전화에서 `휴대폰 방향 맞추기`를 누르면 지원하는 브라우저에서 방향 센서와 화면을 연결합니다.
 
+### 거리뷰에서 달 보기
 
-## 사용된 라이브러리/참고 자료
+1. 지도 위 `거리뷰 보기`를 누릅니다.
+2. 선택한 좌표의 네이버 거리뷰가 달 방위와 고도를 향합니다.
+3. 화면을 드래그하면 주변을 볼 수 있고, `달 방향으로 맞추기`를 누르면 다시 달 쪽으로 돌아갑니다.
+4. 네이버 거리뷰는 이용 약관상 저장·가공할 수 없어 PNG로 내보내지 않습니다.
 
-이 프로젝트는 정밀한 천문 계산을 위해 [Skyfield](http://rhodesmill.org/skyfield/) Python 라이브러리를 활용했습니다. Skyfield는 다음을 인용하여 참조할 수 있습니다:
+위치 권한을 거부해도 앱을 사용할 수 있습니다. 지도에서 위치를 선택하거나 좌표를 직접 입력하면 됩니다.
 
-Rhodes, B. (2019). Skyfield: Elegant Astronomy for Python. Astrophysics Source Code Library, ascl:1907.024.
+## 위치 권한과 모바일 사용
 
-### 유효기간
-- de440.bsp (1550년 ~ 2650년 까지 유효)
-  
-### deXXX.bsp 파일은 "행성 궤도력 데이터 파일"입니다.
-- 제작: NASA의 제트추진연구소(JPL)에서 만듭니다.
-- 역할: 특정 기간(DE421의 경우 1900년~2050년) 동안의 태양, 지구, 달, 행성들의 정밀한 3차원 위치와 속도 정보를 담고 있는 일종의 데이터베이스입니다.
-- 사용: skyfield 라이브러리는 이 de421.bsp 파일을 읽어서 "2025년 8월 11일에 달이 정확히 어디에 있을까?"와 같은 천문학적 계산을 수행합니다. 즉, 우리 시뮬레이터가 정확한 달의 위치를 계산할 수 있도록 하는 핵심 데이터 소스입니다.
-- .bsp는 Binary SPK(Spacecraft and Planet Kernel)의 약자입니다.
+브라우저의 위치 정보와 방향 센서는 보안 연결에서만 사용할 수 있습니다. 같은 컴퓨터의 `localhost` 또는 `127.0.0.1`은 예외적으로 허용되지만, 휴대전화에서 컴퓨터의 내부망 주소로 접속하는 일반 HTTP 환경에서는 권한이 차단될 수 있습니다. 실제 배포 환경에서는 HTTPS를 사용해 주세요.
+
+입력한 좌표와 시각은 달 위치 계산을 위해 로컬 Flask 서버로 전달되며 별도 파일이나 데이터베이스에 저장하지 않습니다.
+
+네이버 거리뷰를 사용하면 브라우저가 네이버 지도 API로 선택한 좌표의 파노라마를 불러옵니다. 거리뷰 이미지는 서버에 저장하지 않으며 PNG로도 내보내지 않습니다.
+
+## 계산 기준과 한계
+
+- 천체 위치는 Skyfield와 JPL DE440 천체력(약 1550년~2650년)을 사용해 관측자 위치 기준으로 계산합니다.
+- 방위각은 진북 0°, 동쪽 90°, 남쪽 180°, 서쪽 270°입니다.
+- 화면의 고도는 표준 대기 굴절을 적용한 겉보기 중심 고도입니다.
+- 월출과 월몰은 달의 거리별 겉보기 반지름과 표준 대기 굴절을 반영합니다.
+- 지도 선의 끝점은 실제 달의 지상 위치가 아닙니다. 관측자에게서 달을 바라볼 수평 방향을 5km 길이로 표현한 안내선입니다.
+- 3차원 화면과 거리뷰의 달은 찾기 쉽도록 실제 각지름보다 크게 표시합니다.
+- 네이버 거리뷰는 한국 도로 커버리지가 넓지만 도로가 아닌 지점에는 없을 수 있습니다. 가까운 길을 선택해 주세요.
+- 거리뷰는 공식 파노라마 뷰어로만 표시합니다. 타일을 내려받아 저장하거나 PNG로 합성하지 않습니다.
+- 계산은 평탄한 천문학적 지평선을 기준으로 합니다. 산, 건물, 나무, 구름, 안개, 주변 조명은 반영하지 않습니다.
+- 달이 산이나 건물 뒤에 가려지는지는 자동 판별하지 않습니다. 거리뷰 속 실제 지형과 비교해 판단해 주세요.
+- 휴대전화 나침반은 주변 금속, 자석, 기기 보정 상태에 따라 오차가 생길 수 있습니다. 중요한 관측에서는 방위각 숫자와 실제 지형을 함께 확인해 주세요.
+
+## 응용 프로그램 인터페이스
+
+달 위치 계산은 `POST /api/moon-position`을 사용합니다.
+
+요청 예시:
+
+```json
+{
+  "lat": 37.5665,
+  "lon": 126.978,
+  "elevation": 38,
+  "datetime": "2026-07-13T21:00",
+  "timezone": "Asia/Seoul"
+}
+```
+
+응답에는 다음 정보가 포함됩니다.
+
+- 관측 좌표와 시간대
+- 선택한 시각의 고도, 방위각, 거리, 16방위 이름
+- 표준 대기 굴절 적용 고도와 기하학적 고도
+- 달의 위상과 밝은 면 비율
+- 해당 날짜의 월출·월몰
+- 15분 단위 하루 이동 궤적
+- 지도 방향선용 끝점과 관측 안내 문구
+
+기존 주소와의 호환을 위해 `POST /calculate`도 같은 형식의 응답을 제공합니다. 상태 확인은 `GET /api/health`를 사용합니다. 네이버 거리뷰 사용 여부는 `GET /api/config`에서 확인할 수 있습니다.
+
+## 검증
+
+기본 자동 검증은 표준 라이브러리의 `unittest`로 실행합니다.
+
+```powershell
+python -m unittest discover -s tests -v
+```
+
+## 프로젝트 구조
+
+```text
+moon-simulator/
+├─ app.py                 달 위치 계산과 Flask 응용 프로그램
+├─ de440.bsp              JPL DE440 천체력
+├─ requirements.txt       파이썬 의존성
+├─ static/
+│  ├─ app.js              3차원 하늘, 지도, 위치·방향 센서 연결
+│  ├─ naver-maps.js       네이버 거리뷰 로더와 달 위치 투영
+│  ├─ photo-composer.js   네이버 거리뷰와 달 위치 표시
+│  └─ styles.css          반응형 대시보드 스타일
+├─ templates/
+│  └─ index.html          한글 사용자 화면
+└─ tests/
+   └─ test_app.py         계산과 입력 검증 테스트
+```
+
+## 참고 자료
+
+- [Skyfield 문서](https://rhodesmill.org/skyfield/)
+- [JPL 행성 천체력](https://ssd.jpl.nasa.gov/planets/eph_export.html)
+- [Three.js 문서](https://threejs.org/docs/)
+- [Leaflet 문서](https://leafletjs.com/reference.html)
+- [네이버 지도 JavaScript API 파노라마](https://navermaps.github.io/maps.js.ncp/docs/tutorial-Panorama.html)
+- [네이버 클라우드 플랫폼 Maps](https://www.ncloud.com/product/applicationService/maps)
+
+네이버 거리뷰는 Web Dynamic Map 키로 공식 파노라마 뷰어만 사용합니다. Maps API 결과 데이터의 저장·캐시·가공이 금지되어 있어 거리뷰 화면은 PNG로 저장하지 않습니다.
+
+Skyfield 인용 정보: Rhodes, B. (2019). *Skyfield: Elegant Astronomy for Python*. Astrophysics Source Code Library, ascl:1907.024.
