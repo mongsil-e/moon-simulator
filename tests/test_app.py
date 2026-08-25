@@ -1,3 +1,4 @@
+import datetime as dt
 import json
 import os
 import unittest
@@ -43,6 +44,8 @@ class MoonSimulatorTestCase(unittest.TestCase):
         self.assertNotIn(b"datetime-local", page.data)
         self.assertIn(b'id="favoriteList"', page.data)
         self.assertIn("보이면 노란 달".encode(), page.data)
+        self.assertIn("달 방향".encode(), page.data)
+        self.assertNotIn("이 방향으로 고개를 들면 됩니다".encode(), page.data)
         self.assertIn(b'id="appConfig"', page.data)
         self.assertIn(b'id="photoStreetView"', page.data)
         self.assertNotIn(b"KartaView", page.data)
@@ -54,6 +57,11 @@ class MoonSimulatorTestCase(unittest.TestCase):
         self.assertNotIn("보기 쉽게 6배".encode(), page.data)
         self.assertNotIn(b"photoMoonScaleRange", page.data)
         self.assertNotIn("달 크기는 찾기 쉽게 확대했습니다".encode(), page.data)
+        self.assertIn("밤 장면 만들기".encode(), page.data)
+        self.assertIn("이미지 저장".encode(), page.data)
+        self.assertIn(b'id="photoEveningButton"', page.data)
+        self.assertIn(b'id="photoEveningSaveButton"', page.data)
+        self.assertIn(b'id="photoEveningProgress"', page.data)
 
     def test_config_hides_naver_secret_and_exposes_client_id(self):
         with patch.dict(
@@ -79,6 +87,8 @@ class MoonSimulatorTestCase(unittest.TestCase):
         self.assertNotIn(b"super-secret-key", config.data)
         self.assertNotIn(b"super-secret-key", page.data)
         self.assertNotIn("secret", json.dumps(payload))
+        self.assertIn("evening_scene", payload)
+        self.assertNotIn("GEMINI", json.dumps(payload).upper())
 
     def test_current_position_and_daily_trajectory(self):
         response = self.observation()
@@ -94,6 +104,18 @@ class MoonSimulatorTestCase(unittest.TestCase):
         self.assertEqual(len(data["trajectory"]), 97)
         self.assertEqual(data["trajectory"][0]["minute_of_day"], 0)
         self.assertEqual(data["trajectory"][-1]["minute_of_day"], 1440)
+        path = data["hourly_path"]
+        self.assertGreater(len(path), 2)
+        self.assertIn("label", path[0])
+        self.assertIn("map_endpoint", path[0])
+        rise_time = dt.datetime.fromisoformat(data["events"]["rise"]["time"])
+        start_time = dt.datetime.fromisoformat(path[0]["time"])
+        self.assertAlmostEqual((rise_time - start_time).total_seconds() / 3600, 1, delta=0.05)
+        gaps = [
+            (dt.datetime.fromisoformat(later["time"]) - dt.datetime.fromisoformat(earlier["time"])).total_seconds() / 3600
+            for earlier, later in zip(path, path[1:])
+        ]
+        self.assertTrue(all(0.99 <= gap <= 1.01 for gap in gaps))
 
     def test_lunar_events_use_moon_specific_horizon(self):
         response = self.observation()
@@ -135,6 +157,71 @@ class MoonSimulatorTestCase(unittest.TestCase):
         data = response.get_json()
         self.assertEqual(data["observer"]["timezone"], "America/New_York")
         self.assertTrue(data["requested_time"].endswith("-04:00"))
+
+    def _jpeg_stub(self):
+        return __import__("base64").b64encode(b"\xff\xd8\xff" + b"x" * 1200).decode()
+
+    def test_evening_scene_requires_key_and_screenshot(self):
+        with patch("app.evening_scene_enabled", return_value=False):
+            blocked = self.client.post("/api/evening-scene", json={
+                "lat": 37.5665,
+                "lon": 126.9780,
+                "datetime": "2026-07-13T21:00",
+                "timezone": "Asia/Seoul",
+                "image": self._jpeg_stub(),
+            })
+        self.assertEqual(blocked.status_code, 503)
+        self.assertIn("GEMINI_API_KEY", blocked.get_json()["error"])
+
+        with patch("app.evening_scene_enabled", return_value=True):
+            missing = self.client.post("/api/evening-scene", json={
+                "lat": 37.5665,
+                "lon": 126.9780,
+                "datetime": "2026-07-13T21:00",
+                "timezone": "Asia/Seoul",
+            })
+        self.assertEqual(missing.status_code, 400)
+        self.assertIn("화면", missing.get_json()["error"])
+
+    def test_evening_scene_uses_visible_screenshot(self):
+        with patch("app.evening_scene_enabled", return_value=True), patch(
+            "app.generate_evening_scene",
+            return_value={
+                "image": "ZmFrZQ==",
+                "mime_type": "image/jpeg",
+                "notice": "지금 보이는 화면을 바탕으로 만든 예상 밤 장면입니다.",
+            },
+        ) as generate:
+            response = self.client.post("/api/evening-scene", json={
+                "lat": 37.5665,
+                "lon": 126.9780,
+                "datetime": "2026-07-13T21:00",
+                "timezone": "Asia/Seoul",
+                "place_name": "서울시청",
+                "image": self._jpeg_stub(),
+            })
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["image"], "ZmFrZQ==")
+        self.assertEqual(payload["mime_type"], "image/jpeg")
+        self.assertIn("밤 장면", payload["notice"])
+        generate.assert_called_once()
+
+    def test_evening_prompt_forbids_new_buildings(self):
+        from evening_scene import build_evening_prompt
+
+        prompt = build_evening_prompt({
+            "position": {"altitude_deg": 32, "azimuth_deg": 140, "direction": "남동", "above_horizon": True},
+            "phase": {"name": "망", "illumination_percent": 99},
+            "sun_position": {"altitude_deg": -18},
+        })
+        self.assertIn("Do not add any new buildings", prompt)
+        self.assertIn("Keep only the existing buildings", prompt)
+        self.assertIn("Obey real-world physics", prompt)
+        self.assertIn("real moon actually rose", prompt)
+        self.assertIn("night photograph", prompt)
+        self.assertNotIn("evening photograph", prompt)
 
 
 if __name__ == "__main__":

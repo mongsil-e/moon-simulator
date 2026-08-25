@@ -10,6 +10,8 @@ from flask import Flask, jsonify, render_template, request
 from skyfield import almanac
 from skyfield.api import load, load_file, wgs84
 
+from evening_scene import evening_scene_enabled, generate_evening_scene
+
 
 BASE_DIR = Path(__file__).resolve().parent
 EPHEMERIS_PATH = BASE_DIR / "de440.bsp"
@@ -65,7 +67,10 @@ def _public_app_config() -> dict:
         "naver_maps": {
             "enabled": bool(client_id),
             "client_id": client_id or None,
-        }
+        },
+        "evening_scene": {
+            "enabled": evening_scene_enabled(),
+        },
     }
 
 
@@ -212,6 +217,73 @@ def find_daily_events(observer, day_start: dt.datetime, day_end: dt.datetime, la
     }
 
 
+def _first_set_after(observer, start_local: dt.datetime, lat: float, lon: float, search_hours: int = 32) -> dt.datetime | None:
+    start_time = ts.from_datetime(start_local)
+    end_time = ts.from_datetime(start_local + dt.timedelta(hours=search_hours))
+    set_times, set_occurs = almanac.find_settings(observer, moon, start_time, end_time)
+    for event_time, event_is_real in zip(set_times, set_occurs):
+        if not bool(event_is_real):
+            continue
+        local_time = event_time.astimezone(start_local.tzinfo)
+        if local_time > start_local:
+            return local_time
+    return None
+
+
+def build_hourly_visible_path(
+    observer,
+    day_start: dt.datetime,
+    lat: float,
+    lon: float,
+    events: dict,
+    trajectory: list[dict],
+) -> list[dict]:
+    """월출 1시간 전부터 달이 보이는 동안을 1시간 간격으로 만듭니다."""
+    rise = events.get("rise")
+    if rise:
+        rise_time = dt.datetime.fromisoformat(rise["time"])
+        start = rise_time - dt.timedelta(hours=1)
+        end = _first_set_after(observer, rise_time, lat, lon) or (rise_time + dt.timedelta(hours=16))
+    else:
+        visible = [item for item in trajectory if item.get("above_horizon")]
+        if not visible:
+            return []
+        start = dt.datetime.fromisoformat(visible[0]["time"])
+        end = dt.datetime.fromisoformat(visible[-1]["time"])
+
+    local_times: list[dt.datetime] = []
+    cursor = start
+    while cursor <= end + dt.timedelta(seconds=1) and len(local_times) < 22:
+        local_times.append(cursor)
+        cursor += dt.timedelta(hours=1)
+    if not local_times:
+        return []
+
+    skyfield_times = ts.from_datetimes(local_times)
+    apparent = observer.at(skyfield_times).observe(moon).apparent()
+    _geometric_altitudes, azimuths, distances = apparent.altaz()
+    apparent_altitudes, _, _ = apparent.altaz(temperature_C="standard")
+
+    path = []
+    for index, local_time in enumerate(local_times):
+        altitude = float(apparent_altitudes.degrees[index])
+        azimuth = float(azimuths.degrees[index]) % 360
+        angular_radius = math.degrees(math.asin(min(1.0, 1737.4 / float(distances.km[index]))))
+        dest_lat, dest_lon = destination_point(lat, lon, azimuth)
+        path.append(
+            {
+                "time": local_time.isoformat(timespec="minutes"),
+                "label": local_time.strftime("%H:%M"),
+                "altitude_deg": _round(altitude),
+                "azimuth_deg": _round(azimuth),
+                "direction": direction_name(azimuth),
+                "above_horizon": altitude + angular_radius > 0,
+                "map_endpoint": {"lat": _round(dest_lat, 6), "lon": _round(dest_lon, 6)},
+            }
+        )
+    return path
+
+
 def build_daily_trajectory(observer, day_start: dt.datetime, day_end: dt.datetime) -> list[dict]:
     step = dt.timedelta(minutes=15)
     local_times: list[dt.datetime] = []
@@ -311,6 +383,7 @@ def calculate_observation(data: dict) -> dict:
         },
         "events": events,
         "trajectory": trajectory,
+        "hourly_path": build_hourly_visible_path(observer, day_start, lat, lon, events, trajectory),
         "best_position": best_position,
         "recommendation": build_recommendation(position, best_position),
         "notice": "표준 대기 굴절과 달의 겉보기 크기를 반영한 평탄한 천문학적 지평선 기준입니다. 건물, 산, 구름, 주변 빛은 반영하지 않습니다.",
@@ -339,6 +412,7 @@ def health():
         "status": "ok",
         "ephemeris": EPHEMERIS_PATH.name,
         "naver_maps": _public_app_config()["naver_maps"]["enabled"],
+        "evening_scene": evening_scene_enabled(),
     })
 
 
@@ -353,11 +427,39 @@ def moon_position():
     data = request.get_json(silent=True) or {}
     try:
         return jsonify(calculate_observation(data))
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+    except ValueError as extra:
+        return jsonify({"error": str(extra)}), 400
     except Exception:
         app.logger.exception("달 위치 계산 중 예상하지 못한 오류가 발생했습니다.")
         return jsonify({"error": "달 위치를 계산하지 못했습니다. 잠시 후 다시 시도해 주세요."}), 500
+
+
+@app.post("/api/evening-scene")
+def evening_scene():
+    data = request.get_json(silent=True) or {}
+    if not evening_scene_enabled():
+        return jsonify({"error": "GEMINI_API_KEY를 .env에 넣고 서버를 다시 실행해 주세요."}), 503
+    try:
+        observation = calculate_observation(data)
+        extras = {
+            "place_name": str(data.get("place_name") or "")[:80],
+            "view_heading_deg": data.get("view_heading_deg"),
+        }
+        result = generate_evening_scene(observation, data, extras)
+        return jsonify({
+            "image": result["image"],
+            "mime_type": result["mime_type"],
+            "notice": result["notice"],
+            "position": observation["position"],
+            "phase": observation["phase"],
+        })
+    except ValueError as extra:
+        return jsonify({"error": str(extra)}), 400
+    except RuntimeError as extra:
+        return jsonify({"error": str(extra)}), 502
+    except Exception:
+        app.logger.exception("밤 장면 생성 중 오류가 발생했습니다.")
+        return jsonify({"error": "밤 장면을 만들지 못했습니다. 잠시 후 다시 시도해 주세요."}), 500
 
 
 if __name__ == "__main__":

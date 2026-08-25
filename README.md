@@ -47,6 +47,14 @@ NAVER_MAPS_CLIENT_SECRET=발급받은 Client Secret
 
 애플리케이션의 웹 서비스 URL에는 `http://127.0.0.1:5000`과 `http://localhost:5000`을 등록해야 합니다. Client Secret은 서버에만 두고, 브라우저에는 Client ID만 전달합니다.
 
+거리뷰에서 `밤 장면 만들기`를 쓰려면 [Google AI Studio](https://aistudio.google.com/apikey)에서 Gemini API 키를 받아 `.env`에 넣습니다.
+
+```
+GEMINI_API_KEY=발급받은 Gemini API 키
+```
+
+이 기능은 지금 화면에 보이는 거리뷰만 잠깐 사용해 밤하늘로 바꾸고, 원본 이미지는 서버에 저장하지 않습니다. 완성된 이미지는 `이미지 저장`으로 받을 수 있습니다.
+
 ## 실행
 
 ```powershell

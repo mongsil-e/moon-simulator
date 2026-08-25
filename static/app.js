@@ -618,6 +618,31 @@ function mapPointAlongBearing(lat, lon, azimuthDeg, fraction = 0.36) {
 }
 
 
+function moonMapFraction(altitudeDeg) {
+    const altitude = Number(altitudeDeg);
+    if (!Number.isFinite(altitude) || altitude <= 0) return 0.22;
+    return clamp(0.22 + (altitude / 90) * 0.32, 0.22, 0.54);
+}
+
+
+function addMoonMarker(latlng, item, { current = false } = {}) {
+    const above = Boolean(item.above_horizon);
+    const label = item.label || timeFromIso(item.time);
+    const moonIcon = window.L.divIcon({
+        className: "map-leaflet-icon",
+        html: `<div class="map-moon-marker ${above ? "is-visible" : "is-hidden"}${current ? " is-current" : ""}"><span class="map-moon-orb"></span><span class="map-moon-time">${label}</span></div>`,
+        iconSize: [44, 48],
+        iconAnchor: [22, 16],
+    });
+    window.L.marker(latlng, {
+        icon: moonIcon,
+        interactive: false,
+        keyboard: false,
+        zIndexOffset: current ? 700 : 500,
+    }).addTo(state.mapLayers);
+}
+
+
 function updateMap(position, moveMap = false) {
     if (!state.mapReady || !state.data || state.mapUpdating) return;
     state.mapUpdating = true;
@@ -625,36 +650,66 @@ function updateMap(position, moveMap = false) {
     const lat = Number(state.data.observer.lat);
     const lon = Number(state.data.observer.lon);
     const origin = [lat, lon];
+    const hourly = Array.isArray(state.data.hourly_path) ? state.data.hourly_path : [];
     const azimuth = normalizeDegrees(position.azimuth_deg);
     const above = Boolean(position.above_horizon);
-    const moonPoint = mapPointAlongBearing(lat, lon, azimuth, 0.38);
-    const lineEnd = mapPointAlongBearing(lat, lon, azimuth, 0.48);
-    const wedgeLeft = mapPointAlongBearing(lat, lon, azimuth - 16, 0.46);
-    const wedgeRight = mapPointAlongBearing(lat, lon, azimuth + 16, 0.46);
+    const moonPoint = mapPointAlongBearing(lat, lon, azimuth, moonMapFraction(position.altitude_deg));
+    const lineEnd = mapPointAlongBearing(lat, lon, azimuth, moonMapFraction(position.altitude_deg) + 0.1);
+    const wedgeLeft = mapPointAlongBearing(lat, lon, azimuth - 16, moonMapFraction(position.altitude_deg) + 0.08);
+    const wedgeRight = mapPointAlongBearing(lat, lon, azimuth + 16, moonMapFraction(position.altitude_deg) + 0.08);
     const lineColor = above ? "#f5d98b" : "#9aa7a2";
 
     state.mapLayers.clearLayers();
     window.L.polygon([origin, wedgeLeft, wedgeRight], {
         stroke: false,
         fillColor: lineColor,
-        fillOpacity: above ? 0.28 : 0.14,
-        interactive: false,
-    }).addTo(state.mapLayers);
-    window.L.polyline([origin, lineEnd], {
-        color: above ? "rgba(245, 217, 139, 0.28)" : "rgba(154, 167, 162, 0.22)",
-        weight: 14,
-        opacity: 1,
-        lineCap: "round",
+        fillOpacity: above ? 0.18 : 0.1,
         interactive: false,
     }).addTo(state.mapLayers);
     window.L.polyline([origin, lineEnd], {
         color: lineColor,
-        weight: 5,
-        opacity: above ? 1 : 0.78,
+        weight: 4,
+        opacity: above ? 0.9 : 0.55,
         dashArray: above ? null : "7 8",
         lineCap: "round",
         interactive: false,
     }).addTo(state.mapLayers);
+
+    const hourlyPoints = hourly.map((item) => mapPointAlongBearing(
+        lat,
+        lon,
+        item.azimuth_deg,
+        moonMapFraction(item.altitude_deg),
+    ));
+    if (hourlyPoints.length > 1) {
+        window.L.polyline(hourlyPoints, {
+            color: "rgba(245, 217, 139, 0.72)",
+            weight: 3,
+            opacity: 0.9,
+            lineCap: "round",
+            lineJoin: "round",
+            interactive: false,
+        }).addTo(state.mapLayers);
+    }
+    let closestIndex = -1;
+    let closestDiff = Infinity;
+    const selectedMs = new Date(position.time).getTime();
+    hourly.forEach((item, index) => {
+        const diff = Math.abs(new Date(item.time).getTime() - selectedMs);
+        if (diff < closestDiff) {
+            closestDiff = diff;
+            closestIndex = index;
+        }
+    });
+    hourly.forEach((item, index) => {
+        addMoonMarker(hourlyPoints[index], item, { current: index === closestIndex && closestDiff < 45 * 60 * 1000 });
+    });
+    if (!hourly.length || closestDiff >= 45 * 60 * 1000) {
+        addMoonMarker(moonPoint, {
+            ...position,
+            label: timeFromIso(position.time),
+        }, { current: true });
+    }
 
     const observerIcon = window.L.divIcon({
         className: "map-leaflet-icon",
@@ -662,7 +717,7 @@ function updateMap(position, moveMap = false) {
         iconSize: [24, 24],
         iconAnchor: [12, 12],
     });
-    window.L.marker(origin, { icon: observerIcon, zIndexOffset: 400 })
+    window.L.marker(origin, { icon: observerIcon, zIndexOffset: 800 })
         .bindTooltip(`내가 서 있는 곳<br>위도 ${lat.toFixed(4)} · 경도 ${lon.toFixed(4)}`, { direction: "top" })
         .addTo(state.mapLayers);
 
@@ -683,25 +738,17 @@ function updateMap(position, moveMap = false) {
             .addTo(state.mapLayers);
     }
 
-    const moonIcon = window.L.divIcon({
-        className: "map-leaflet-icon",
-        html: `<div class="map-moon-marker ${above ? "is-visible" : "is-hidden"}"><span class="map-moon-orb"></span></div>`,
-        iconSize: [36, 36],
-        iconAnchor: [18, 18],
-    });
-    window.L.marker(moonPoint, {
-        icon: moonIcon,
-        interactive: false,
-        keyboard: false,
-        zIndexOffset: 650,
-    }).addTo(state.mapLayers);
-
     if (moveMap) {
-        const targetZoom = state.map.getZoom() || 13;
-        const current = state.map.getCenter();
-        const target = window.L.latLng(origin);
-        if (!current || current.distanceTo(target) > 12) {
-            state.map.setView(origin, targetZoom, { animate: false });
+        if (hourlyPoints.length) {
+            const bounds = window.L.latLngBounds([origin, ...hourlyPoints]);
+            state.map.fitBounds(bounds, { padding: [36, 36], maxZoom: 14, animate: false });
+        } else {
+            const targetZoom = state.map.getZoom() || 13;
+            const current = state.map.getCenter();
+            const target = window.L.latLng(origin);
+            if (!current || current.distanceTo(target) > 12) {
+                state.map.setView(origin, targetZoom, { animate: false });
+            }
         }
     }
     } finally {
@@ -1184,6 +1231,9 @@ function bindInterface() {
         if (completed) state.photoComposer?.open();
     });
     dom.nowButton?.addEventListener("click", useCurrentTime);
+    dom.dateInput?.addEventListener("change", () => {
+        requestObservation({ moveMap: true, focusMoon: true, openPhoto: false });
+    });
     dom.timeSlider?.addEventListener("input", updateFromSlider);
     dom.playButton?.addEventListener("click", togglePlayback);
     dom.focusMoonButton?.addEventListener("click", focusViewOnMoon);

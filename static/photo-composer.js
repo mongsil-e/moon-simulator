@@ -60,21 +60,40 @@ export class PhotoComposer {
             autoTitle: byId("photoAutoTitle"),
             autoMeta: byId("photoAutoMeta"),
             centerMoonButton: byId("photoCenterMoonButton"),
+            eveningButton: byId("photoEveningButton"),
+            eveningToggle: byId("eveningViewToggle"),
+            eveningResult: byId("photoEveningResult"),
+            eveningImage: byId("photoEveningImage"),
+            eveningCaption: byId("photoEveningCaption"),
+            eveningProgress: byId("photoEveningProgress"),
+            eveningProgressTitle: byId("photoEveningProgressTitle"),
+            eveningProgressMeta: byId("photoEveningProgressMeta"),
+            eveningSaveButton: byId("photoEveningSaveButton"),
             status: byId("photoProjectionStatus"),
         };
+        this.eveningEnabled = this.readEveningEnabled();
+        this.eveningBusy = false;
+        this.eveningTimer = null;
 
         this.bindEvents();
         this.sync();
     }
 
-    readNaverClientId() {
+    readAppConfig() {
         const node = document.getElementById("appConfig");
         try {
-            const config = JSON.parse(node?.textContent || "{}");
-            return String(config?.naver_maps?.client_id || "");
+            return JSON.parse(node?.textContent || "{}");
         } catch {
-            return "";
+            return {};
         }
+    }
+
+    readNaverClientId() {
+        return String(this.readAppConfig()?.naver_maps?.client_id || "");
+    }
+
+    readEveningEnabled() {
+        return Boolean(this.readAppConfig()?.evening_scene?.enabled);
     }
 
     bindEvents() {
@@ -84,6 +103,12 @@ export class PhotoComposer {
         this.dom.centerMoonButton.addEventListener("click", () => {
             this.lookAtMoon();
             this.showToast("거리뷰를 현재 달의 방향과 높이에 맞췄습니다.");
+        });
+        this.dom.eveningButton?.addEventListener("click", () => this.generateEveningScene());
+        this.dom.eveningSaveButton?.addEventListener("click", () => this.saveEveningImage());
+        this.dom.eveningToggle?.addEventListener("click", (event) => {
+            const view = event.target?.dataset?.view;
+            if (view) this.showEveningView(view === "evening");
         });
         document.addEventListener("keydown", (event) => this.handleDialogKeydown(event));
     }
@@ -157,6 +182,7 @@ export class PhotoComposer {
         this.dom.status.className = "photo-projection-status";
         if (type === "warning") this.dom.status.classList.add("is-warning");
         if (type === "error") this.dom.status.classList.add("is-error");
+        if (type === "success") this.dom.status.classList.add("is-success");
         icon.textContent = type === "error" ? "!" : type === "warning" ? "△" : type === "loading" ? "…" : "◎";
         titleElement.textContent = title;
         detailElement.textContent = detail;
@@ -167,6 +193,7 @@ export class PhotoComposer {
         this.dom.autoInfo.className = "photo-auto-info";
         if (type === "loading") this.dom.autoInfo.classList.add("is-loading");
         if (type === "error") this.dom.autoInfo.classList.add("is-error");
+        if (type === "success") this.dom.autoInfo.classList.add("is-success");
         this.dom.autoTitle.textContent = title;
         this.dom.autoMeta.textContent = detail;
     }
@@ -589,5 +616,225 @@ export class PhotoComposer {
     timeFromIso(value) {
         const match = String(value || "").match(/T(\d{2}):(\d{2})/);
         return match ? `${match[1]}:${match[2]}` : "--:--";
+    }
+
+    showEveningView(showEvening) {
+        const hasResult = Boolean(this.dom.eveningImage?.getAttribute("src"));
+        if (showEvening && !hasResult) return;
+        if (this.dom.streetViewShell) this.dom.streetViewShell.hidden = showEvening;
+        if (this.dom.eveningResult) this.dom.eveningResult.hidden = !showEvening;
+        this.dom.eveningToggle?.querySelectorAll("button").forEach((button) => {
+            button.classList.toggle("is-active", button.dataset.view === (showEvening ? "evening" : "street"));
+        });
+        if (showEvening) this.stopMoonTracking();
+        else if (this.loaded && !this.dom.modal.hidden) this.startMoonTracking();
+    }
+
+    canvasToJpeg(canvas, quality = 0.86) {
+        const maxWidth = 1600;
+        let { width, height } = canvas;
+        if (!width || !height) return "";
+        if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+        }
+        const out = document.createElement("canvas");
+        out.width = width;
+        out.height = height;
+        const context = out.getContext("2d");
+        context.fillStyle = "#07110f";
+        context.fillRect(0, 0, width, height);
+        context.drawImage(canvas, 0, 0, width, height);
+        try {
+            return out.toDataURL("image/jpeg", quality);
+        } catch {
+            throw new Error("화면을 이미지로 담을 수 없습니다. 거리뷰가 완전히 뜬 뒤 다시 시도해 주세요.");
+        }
+    }
+
+    async captureVisibleStreetView() {
+        const shell = this.dom.streetViewShell;
+        if (!shell || shell.hidden) throw new Error("거리뷰가 열린 뒤 다시 눌러 주세요.");
+
+        const width = Math.max(1, shell.clientWidth);
+        const height = Math.max(1, shell.clientHeight);
+        const composed = document.createElement("canvas");
+        composed.width = width;
+        composed.height = height;
+        const context = composed.getContext("2d");
+        context.fillStyle = "#07110f";
+        context.fillRect(0, 0, width, height);
+
+        let drewPanorama = false;
+        const sourceCanvases = [...this.dom.streetView.querySelectorAll("canvas")];
+        for (const canvas of sourceCanvases) {
+            if (canvas.closest(".photo-streetview-moon")) continue;
+            try {
+                const box = canvas.getBoundingClientRect();
+                const root = shell.getBoundingClientRect();
+                context.drawImage(canvas, box.left - root.left, box.top - root.top, box.width, box.height);
+                drewPanorama = true;
+            } catch {
+                drewPanorama = false;
+                break;
+            }
+        }
+
+        if (!drewPanorama && window.html2canvas) {
+            const shot = await window.html2canvas(shell, {
+                backgroundColor: "#07110f",
+                useCORS: true,
+                allowTaint: false,
+                logging: false,
+                scale: 1,
+                ignoreElements: (element) => element.classList?.contains("photo-streetview-caption"),
+            });
+            context.drawImage(shot, 0, 0, width, height);
+            drewPanorama = true;
+        }
+
+        if (!drewPanorama) throw new Error("지금 화면을 담지 못했습니다. 브라우저를 바꾼 뒤 다시 시도해 주세요.");
+
+        const moon = this.dom.streetViewMoon;
+        const moonCanvas = this.dom.streetViewMoonCanvas;
+        if (moon && moonCanvas && !moon.hidden) {
+            const box = moonCanvas.getBoundingClientRect();
+            const root = shell.getBoundingClientRect();
+            context.drawImage(moonCanvas, box.left - root.left, box.top - root.top, box.width, box.height);
+        }
+
+        const dataUrl = this.canvasToJpeg(composed);
+        if (!dataUrl || dataUrl.length < 800) throw new Error("화면 캡처가 비어 있습니다.");
+        return dataUrl;
+    }
+
+    setEveningProgress(title, detail) {
+        this.eveningProgressDetail = detail;
+        const seconds = this.eveningStartedAt
+            ? Math.max(0, Math.round((Date.now() - this.eveningStartedAt) / 1000))
+            : 0;
+        const timed = seconds > 0 ? `${seconds}초 경과 · ${detail}` : detail;
+        if (this.dom.eveningProgressTitle) this.dom.eveningProgressTitle.textContent = title;
+        if (this.dom.eveningProgressMeta) this.dom.eveningProgressMeta.textContent = timed;
+        this.showInfo("loading", title, timed);
+        this.setStatus("loading", title, timed);
+    }
+
+    setEveningLoading(loading) {
+        this.eveningBusy = loading;
+        if (this.dom.eveningButton) {
+            this.dom.eveningButton.disabled = loading;
+            this.dom.eveningButton.textContent = loading ? "밤 장면 만드는 중" : "밤 장면 만들기";
+        }
+        if (this.dom.eveningProgress) this.dom.eveningProgress.hidden = !loading;
+        if (this.eveningTimer) {
+            window.clearInterval(this.eveningTimer);
+            this.eveningTimer = null;
+        }
+        if (!loading) {
+            this.eveningStartedAt = 0;
+            return;
+        }
+        this.eveningStartedAt = Date.now();
+        this.setEveningProgress(
+            "밤 장면을 만들고 있습니다",
+            "화면을 담은 뒤 하늘을 밤으로 바꿉니다. 보통 20~40초 걸립니다.",
+        );
+        this.eveningTimer = window.setInterval(() => {
+            if (!this.eveningBusy) return;
+            this.setEveningProgress(
+                this.dom.eveningProgressTitle?.textContent || "밤 장면을 만들고 있습니다",
+                this.eveningProgressDetail || "보통 20~40초 걸립니다.",
+            );
+        }, 1000);
+    }
+
+    async saveEveningImage() {
+        const source = this.dom.eveningImage?.getAttribute("src");
+        if (!source) {
+            this.showToast("먼저 밤 장면을 만들어 주세요.", true);
+            return;
+        }
+        try {
+            const response = await fetch(source);
+            const blob = await response.blob();
+            const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "");
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `밤장면-${stamp}.jpg`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+            this.showToast("이미지를 저장했습니다.");
+        } catch (error) {
+            this.showToast("이미지를 저장하지 못했습니다. 길게 눌러 저장해 보세요.", true);
+        }
+    }
+
+    async generateEveningScene() {
+        if (this.eveningBusy) return;
+        if (!this.eveningEnabled) {
+            this.showToast("GEMINI_API_KEY를 .env에 넣고 서버를 다시 실행해 주세요.", true);
+            return;
+        }
+        if (!this.loaded) {
+            this.showToast("거리뷰가 열린 뒤 밤 장면을 만들 수 있습니다.", true);
+            return;
+        }
+        const observer = this.getObserver();
+        const position = this.getPosition();
+        if (!observer || !position) {
+            this.showToast("달 위치 계산이 끝난 뒤 다시 눌러 주세요.", true);
+            return;
+        }
+
+        this.setEveningLoading(true);
+        try {
+            this.showEveningView(false);
+            await new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+            this.setEveningProgress("지금 화면을 담고 있습니다", "거리뷰에서 보이는 장면만 캡처합니다.");
+            const screenshot = await this.captureVisibleStreetView();
+            this.setEveningProgress("밤하늘을 그리고 있습니다", "건물과 도로는 유지합니다. 보통 20~40초 걸립니다.");
+            const location = this.streetView?.getLocation?.() || {};
+            const pov = this.streetView?.getPov?.() || {};
+            const response = await fetch("/api/evening-scene", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    lat: observer.lat,
+                    lon: observer.lon,
+                    elevation: observer.elevation_m || 0,
+                    datetime: String(position.time || "").slice(0, 16),
+                    timezone: observer.timezone,
+                    place_name: location.title || location.address || "",
+                    view_heading_deg: pov.pan,
+                    image: screenshot,
+                }),
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || "밤 장면을 만들지 못했습니다.");
+
+            this.setEveningProgress("완성한 이미지를 불러오는 중입니다", "잠시만 기다려 주세요.");
+            this.dom.eveningImage.src = `data:${result.mime_type || "image/jpeg"};base64,${result.image}`;
+            this.dom.eveningCaption.textContent = result.notice || "지금 보이는 화면을 바탕으로 만든 예상 밤 장면입니다.";
+            try {
+                if (this.dom.eveningImage.decode) await this.dom.eveningImage.decode();
+            } catch {
+                /* already loaded */
+            }
+            if (this.dom.eveningToggle) this.dom.eveningToggle.hidden = false;
+            this.showEveningView(true);
+            this.setEveningLoading(false);
+            this.showInfo("success", "예상 밤 장면을 만들었습니다", "위 버튼으로 거리뷰와 비교하거나 이미지를 저장할 수 있습니다.");
+            this.setStatus("success", "예상 밤 장면을 만들었습니다", "거리뷰와 비교하거나 이미지를 저장할 수 있습니다.");
+            this.showToast("밤 장면이 완성되었습니다.");
+        } catch (error) {
+            this.setEveningLoading(false);
+            this.showInfo("error", "밤 장면을 만들지 못했습니다", error.message);
+            this.setStatus("error", "밤 장면을 만들지 못했습니다", error.message);
+            this.showToast(error.message, true);
+        }
     }
 }

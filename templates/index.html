@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css', v=static_version) }}">
     <script defer src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script id="appConfig" type="application/json">{{ app_config | tojson }}</script>
     <script type="module" src="{{ url_for('static', filename='app.js', v=static_version) }}"></script>
 </head>
@@ -93,11 +94,12 @@
                     <div class="panel-header map-header">
                         <div>
                             <p class="eyebrow">지도</p>
-                            <h2 id="mapTitle">이 방향으로 고개를 들면 됩니다</h2>
+                            <h2 id="mapTitle">달 방향</h2>
                         </div>
                         <div class="map-legend">
                             <span class="map-legend-item"><span class="is-visible"></span>보이면 노란 달</span>
                             <span class="map-legend-item"><span class="is-hidden"></span>안 보이면 회색 달</span>
+                            <span class="map-legend-item">월출 1시간 전~보이는 동안 1시간 간격</span>
                         </div>
                     </div>
                     <div class="map-wrap">
@@ -251,6 +253,10 @@
                             <span>거리뷰</span>
                             <strong id="photoPreviewTitle">달 방향으로 맞추는 중</strong>
                         </div>
+                        <div class="photo-view-toggle" id="eveningViewToggle" hidden>
+                            <button type="button" data-view="street">거리뷰</button>
+                            <button type="button" data-view="evening">예상 밤</button>
+                        </div>
                     </div>
 
                     <div class="photo-preview-stage is-streetview" id="photoPreviewStage">
@@ -269,6 +275,18 @@
                                 <span>달</span>
                             </div>
                             <p class="photo-streetview-caption">© NAVER 거리뷰 · 달을 하늘 위치에 올려 표시합니다. 이 화면은 저장하지 않습니다.</p>
+                        </div>
+                        <div class="photo-evening-result" id="photoEveningResult" hidden>
+                            <img id="photoEveningImage" alt="지금 화면을 바탕으로 만든 예상 밤 장면">
+                            <div class="photo-evening-toolbar">
+                                <p id="photoEveningCaption">지금 보이는 화면을 바탕으로 만든 예상 밤 장면입니다.</p>
+                                <button class="button button-primary photo-evening-save" id="photoEveningSaveButton" type="button">이미지 저장</button>
+                            </div>
+                        </div>
+                        <div class="photo-evening-progress" id="photoEveningProgress" hidden>
+                            <span class="loading-orbit" aria-hidden="true"></span>
+                            <strong id="photoEveningProgressTitle">밤 장면을 만들고 있습니다</strong>
+                            <small id="photoEveningProgressMeta">화면을 담은 뒤 하늘을 밤으로 바꿉니다. 보통 20~40초 걸립니다.</small>
                         </div>
                     </div>
 
@@ -290,6 +308,7 @@
 
                 <aside class="photo-calibration-panel" aria-label="거리뷰 조작">
                     <button class="photo-quick-button" id="photoCenterMoonButton" type="button">달 방향으로 맞추기</button>
+                    <button class="button button-primary photo-evening-button" id="photoEveningButton" type="button">밤 장면 만들기</button>
 
                     <div class="photo-auto-info" id="photoAutoInfo" role="status" aria-live="polite" hidden>
                         <div class="photo-auto-copy">

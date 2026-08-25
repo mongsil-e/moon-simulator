@@ -1042,14 +1042,32 @@ svg {
 
 .map-moon-marker {
     display: grid;
-    place-items: center;
+    justify-items: center;
+    gap: 2px;
     pointer-events: none;
 }
 
 .map-moon-orb {
-    width: 30px;
-    height: 30px;
+    width: 22px;
+    height: 22px;
     border-radius: 50%;
+}
+
+.map-moon-marker.is-current .map-moon-orb {
+    width: 28px;
+    height: 28px;
+    box-shadow: 0 0 0 3px rgba(138, 242, 199, 0.45), 0 0 16px rgba(245, 217, 139, 0.7);
+}
+
+.map-moon-time {
+    padding: 1px 4px;
+    border-radius: 6px;
+    background: rgba(5, 15, 12, 0.86);
+    color: var(--text);
+    font-size: 8px;
+    font-weight: 800;
+    line-height: 1.2;
+    white-space: nowrap;
 }
 
 .map-moon-marker.is-visible .map-moon-orb {
@@ -2326,6 +2344,126 @@ body.photo-modal-open {
     font-weight: 700;
 }
 
+.photo-evening-button {
+    width: 100%;
+    min-height: 44px;
+    margin-top: 10px;
+    font-size: 12px;
+}
+
+.photo-evening-button:disabled {
+    opacity: 0.7;
+}
+
+.photo-view-toggle {
+    display: flex;
+    gap: 4px;
+    padding: 3px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: rgba(5, 16, 13, 0.72);
+}
+
+.photo-view-toggle button {
+    min-height: 28px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted-strong);
+    cursor: pointer;
+    font-size: 10px;
+    font-weight: 800;
+}
+
+.photo-view-toggle button.is-active {
+    background: var(--mint);
+    color: #07120f;
+}
+
+.photo-evening-result {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    min-height: 280px;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    background: #050c0a;
+}
+
+.photo-evening-result[hidden] {
+    display: none;
+}
+
+.photo-evening-result img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #050c0a;
+}
+
+.photo-evening-result p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1.45;
+}
+
+.photo-evening-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 12px;
+}
+
+.photo-evening-save {
+    min-height: 36px;
+    padding: 0 12px;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.photo-evening-progress {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 24px;
+    background: rgba(4, 12, 10, 0.78);
+    backdrop-filter: blur(8px);
+    color: var(--text);
+    text-align: center;
+}
+
+.photo-evening-progress[hidden] {
+    display: none;
+}
+
+.photo-evening-progress strong {
+    font-size: 15px;
+}
+
+.photo-evening-progress small {
+    max-width: 280px;
+    color: var(--muted-strong);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.photo-auto-info.is-success::before {
+    background: var(--mint);
+}
+
+.photo-projection-status.is-success {
+    border-color: rgba(138, 242, 199, 0.28);
+}
+
 .photo-quick-button:hover {
     background: rgba(30, 85, 65, 0.42);
 }
@@ -2910,6 +3048,15 @@ body.photo-modal-open {
         min-height: 44px;
         padding: 0 10px;
         font-size: 9px;
+    }
+
+    .photo-evening-toolbar {
+        grid-template-columns: 1fr;
+    }
+
+    .photo-evening-save {
+        width: 100%;
+        min-height: 44px;
     }
 
     .photo-auto-info {
