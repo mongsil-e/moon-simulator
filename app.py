@@ -32,7 +32,7 @@ def _static_version() -> str:
     return str(newest or 1)
 
 
-def _load_env_file(path: Path) -> None:
+def _load_env_file(path: Path, overwrite: bool = False) -> None:
     if not path.is_file():
         return
     for raw_line in path.read_text(encoding="utf-8").splitlines():
@@ -42,7 +42,7 @@ def _load_env_file(path: Path) -> None:
         key, _, value = line.partition("=")
         key = key.strip()
         value = value.strip().strip("'").strip('"')
-        if key and key not in os.environ:
+        if key and (overwrite or key not in os.environ):
             os.environ[key] = value
 
 
@@ -436,6 +436,7 @@ def moon_position():
 
 @app.post("/api/evening-scene")
 def evening_scene():
+    _load_env_file(BASE_DIR / ".env", overwrite=True)
     data = request.get_json(silent=True) or {}
     if not evening_scene_enabled():
         return jsonify({"error": "GEMINI_API_KEY를 .env에 넣고 서버를 다시 실행해 주세요."}), 503
@@ -444,6 +445,12 @@ def evening_scene():
         extras = {
             "place_name": str(data.get("place_name") or "")[:80],
             "view_heading_deg": data.get("view_heading_deg"),
+            "image_width": data.get("image_width"),
+            "image_height": data.get("image_height"),
+            "moon_x_percent": data.get("moon_x_percent"),
+            "moon_y_percent": data.get("moon_y_percent"),
+            "moon_in_view": data.get("moon_in_view"),
+            "view_fov_deg": data.get("view_fov_deg"),
         }
         result = generate_evening_scene(observation, data, extras)
         return jsonify({

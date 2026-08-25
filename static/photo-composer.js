@@ -11,12 +11,13 @@ const byId = (id) => document.getElementById(id);
 
 
 export class PhotoComposer {
-    constructor({ getPosition, getPhase, getObserver, showToast, onOpen, onRemotePhoto }) {
+    constructor({ getPosition, getPhase, getObserver, showToast, onOpen, onClose, onRemotePhoto }) {
         this.getPosition = getPosition;
         this.getPhase = getPhase;
         this.getObserver = getObserver;
         this.showToast = showToast;
         this.onOpen = onOpen;
+        this.onClose = onClose;
         this.onRemotePhoto = onRemotePhoto;
         this.lastFocused = null;
         this.hasOpened = false;
@@ -74,6 +75,7 @@ export class PhotoComposer {
         this.eveningEnabled = this.readEveningEnabled();
         this.eveningBusy = false;
         this.eveningTimer = null;
+        this.lookAtMoonTimers = [];
 
         this.bindEvents();
         this.sync();
@@ -139,6 +141,8 @@ export class PhotoComposer {
         this.dom.appShell?.removeAttribute("inert");
         document.body.classList.remove("photo-modal-open");
         this.stopMoonTracking();
+        this.clearLookAtMoonTimers();
+        this.onClose?.();
         const focusTarget = this.lastFocused?.isConnected ? this.lastFocused : document.getElementById("streetViewButton");
         focusTarget?.focus();
     }
@@ -305,7 +309,10 @@ export class PhotoComposer {
         if (!maps || !this.streetView || this.streetViewListeners.length) return;
         this.streetViewListeners.push(
             maps.Event.addListener(this.streetView, "pov_changed", () => this.updateStreetViewMoon()),
-            maps.Event.addListener(this.streetView, "pano_changed", () => this.showLoadedInfo()),
+            maps.Event.addListener(this.streetView, "pano_changed", () => {
+                this.showLoadedInfo();
+                this.scheduleLookAtMoon();
+            }),
         );
         if (!this.streetViewResizeObserver) {
             this.streetViewResizeObserver = new ResizeObserver(() => this.resizeStreetView());
@@ -326,7 +333,7 @@ export class PhotoComposer {
             return;
         }
         if (!force && this.loaded && this.streetViewObserverKey === observerKey) {
-            this.lookAtMoon();
+            this.scheduleLookAtMoon();
             this.showLoadedInfo();
             this.startMoonTracking();
             return;
@@ -386,11 +393,10 @@ export class PhotoComposer {
             this.streetViewObserverKey = observerKey;
             this.dom.empty.hidden = true;
             this.dom.streetViewShell.hidden = false;
-            this.lookAtMoon();
+            this.scheduleLookAtMoon();
             this.showLoadedInfo();
             this.startMoonTracking();
             this.onRemotePhoto?.(this.streetViewMarker(observer, position));
-            this.showToast("네이버 거리뷰를 달 방향으로 맞췄습니다. 화면을 돌리면 달은 하늘에 그대로 둡니다.");
         } catch (error) {
             if (error.name === "AbortError" || serial !== this.autoRequestSerial) return;
             console.error(error);
@@ -456,14 +462,29 @@ export class PhotoComposer {
         this.updateStreetViewMoon();
     }
 
+    clearLookAtMoonTimers() {
+        this.lookAtMoonTimers?.forEach((id) => window.clearTimeout(id));
+        this.lookAtMoonTimers = [];
+    }
+
+    scheduleLookAtMoon() {
+        this.lookAtMoon();
+        this.clearLookAtMoonTimers();
+        [80, 250, 600, 1200].forEach((delay) => {
+            this.lookAtMoonTimers.push(window.setTimeout(() => {
+                if (!this.dom.modal.hidden && this.streetView) this.lookAtMoon();
+            }, delay));
+        });
+    }
+
     lookAtMoon() {
-        if (!this.streetView || !this.loaded) return;
+        if (!this.streetView) return;
         const position = this.getPosition();
         if (!position) return;
         this.updatingStreetViewPov = true;
         this.streetView.setPov(moonPovFromPosition(position, this.streetView.getPov()?.fov || 70));
         this.updatingStreetViewPov = false;
-        this.updateStreetViewMoon();
+        if (this.loaded) this.updateStreetViewMoon();
     }
 
     updateStreetViewMoon() {
@@ -500,7 +521,7 @@ export class PhotoComposer {
         }
 
         if (!position.above_horizon) {
-            this.setStatus("warning", "달은 지평선 아래입니다", "거리뷰는 달 방위를 향하지만, 이 시각에는 달이 떠 있지 않습니다.");
+            this.setStatus("warning", "달이 보이지 않는 시간입니다", "1시간씩 흐르게 하거나 월출 이후 시각을 선택해 주세요.");
             return;
         }
         if (projection.state === "outside") {
@@ -603,7 +624,10 @@ export class PhotoComposer {
         if (this.autoRequestController && observerKey !== this.autoRequestCoordinateKey) this.cancelLoad();
         if (this.loaded && this.streetViewObserverKey === observerKey) {
             this.updateStreetViewMoon();
-            if (!this.dom.modal.hidden) this.onRemotePhoto?.(this.streetViewMarker(observer, position));
+            if (!this.dom.modal.hidden) {
+                this.lookAtMoon();
+                this.onRemotePhoto?.(this.streetViewMarker(observer, position));
+            }
         }
         if (!this.dom.modal.hidden && observerKey && observerKey !== this.lastObserverKey) {
             this.lastObserverKey = observerKey;
@@ -630,7 +654,7 @@ export class PhotoComposer {
         else if (this.loaded && !this.dom.modal.hidden) this.startMoonTracking();
     }
 
-    canvasToJpeg(canvas, quality = 0.86) {
+    canvasToJpeg(canvas, quality = 0.92) {
         const maxWidth = 1600;
         let { width, height } = canvas;
         if (!width || !height) return "";
@@ -642,8 +666,6 @@ export class PhotoComposer {
         out.width = width;
         out.height = height;
         const context = out.getContext("2d");
-        context.fillStyle = "#07110f";
-        context.fillRect(0, 0, width, height);
         context.drawImage(canvas, 0, 0, width, height);
         try {
             return out.toDataURL("image/jpeg", quality);
@@ -652,60 +674,190 @@ export class PhotoComposer {
         }
     }
 
+    waitFrames(count = 2) {
+        return new Promise((resolve) => {
+            const tick = () => {
+                if (count <= 1) {
+                    resolve();
+                    return;
+                }
+                count -= 1;
+                window.requestAnimationFrame(tick);
+            };
+            window.requestAnimationFrame(tick);
+        });
+    }
+
+    captureLooksEmpty(context, width, height) {
+        const sampleW = Math.min(width, 96);
+        const sampleH = Math.min(height, 96);
+        const pixels = context.getImageData(0, 0, sampleW, sampleH).data;
+        let dark = 0;
+        let counted = 0;
+        for (let index = 0; index < pixels.length; index += 16) {
+            counted += 1;
+            if (pixels[index] < 28 && pixels[index + 1] < 36 && pixels[index + 2] < 32) dark += 1;
+        }
+        return counted > 0 && dark / counted > 0.9;
+    }
+
+    drawLiveCanvas(context, canvas, rootRect) {
+        const box = canvas.getBoundingClientRect();
+        const destX = Math.max(0, box.left - rootRect.left);
+        const destY = Math.max(0, box.top - rootRect.top);
+        const destRight = Math.min(rootRect.width, box.right - rootRect.left);
+        const destBottom = Math.min(rootRect.height, box.bottom - rootRect.top);
+        const destW = destRight - destX;
+        const destH = destBottom - destY;
+        if (destW < 4 || destH < 4) return false;
+
+        const sourceWidth = canvas.width || box.width;
+        const sourceHeight = canvas.height || box.height;
+        if (!sourceWidth || !sourceHeight || box.width < 1 || box.height < 1) return false;
+
+        const scaleX = sourceWidth / box.width;
+        const scaleY = sourceHeight / box.height;
+        const srcX = ((destX + rootRect.left) - box.left) * scaleX;
+        const srcY = ((destY + rootRect.top) - box.top) * scaleY;
+        context.drawImage(
+            canvas,
+            srcX,
+            srcY,
+            destW * scaleX,
+            destH * scaleY,
+            destX,
+            destY,
+            destW,
+            destH,
+        );
+        return true;
+    }
+
+    drawVisibleMoon(context, rootRect) {
+        const moon = this.dom.streetViewMoon;
+        const moonCanvas = this.dom.streetViewMoonCanvas;
+        if (!moon || !moonCanvas || moon.hidden) return false;
+        try {
+            return this.drawLiveCanvas(context, moonCanvas, rootRect);
+        } catch {
+            return false;
+        }
+    }
+
+    panoramaCanvases() {
+        return [...this.dom.streetView.querySelectorAll("canvas")]
+            .filter((canvas) => !canvas.closest(".photo-streetview-moon"))
+            .sort((left, right) => (right.width * right.height) - (left.width * left.height));
+    }
+
+    moonPlacement() {
+        const position = this.getPosition();
+        const pov = this.streetView?.getPov?.();
+        const view = this.dom.streetView;
+        const shell = this.dom.streetViewShell;
+        const width = Math.max(1, view?.clientWidth || shell?.clientWidth || 1);
+        const height = Math.max(1, view?.clientHeight || shell?.clientHeight || 1);
+        if (!position || !pov) {
+            return { width, height, in_view: false, x_percent: null, y_percent: null };
+        }
+        const projection = projectMoonOnStreetView(position, pov, width, height);
+        return {
+            width: projection.width,
+            height: projection.height,
+            in_view: Boolean(position.above_horizon && projection.canDraw),
+            x_percent: (projection.x / projection.width) * 100,
+            y_percent: (projection.y / projection.height) * 100,
+        };
+    }
+
+    async captureWithHtml2Canvas(shell, width, height) {
+        if (!window.html2canvas) return null;
+        const liveCanvases = this.panoramaCanvases();
+        return window.html2canvas(shell, {
+            backgroundColor: "#07110f",
+            useCORS: true,
+            allowTaint: false,
+            logging: false,
+            scale: Math.min(2, window.devicePixelRatio || 1),
+            ignoreElements: (element) => (
+                element.classList?.contains("photo-streetview-caption")
+                || element.classList?.contains("photo-streetview-toolbar")
+                || element.classList?.contains("photo-streetview-moon")
+                || Boolean(element.closest?.(".photo-streetview-toolbar"))
+                || Boolean(element.closest?.(".photo-streetview-moon"))
+            ),
+            x: 0,
+            y: 0,
+            width,
+            height,
+            onclone: (_document, cloned) => {
+                const clonedCanvases = [...cloned.querySelectorAll("canvas")]
+                    .filter((canvas) => !canvas.closest(".photo-streetview-moon"));
+                liveCanvases.forEach((source, index) => {
+                    const target = clonedCanvases[index];
+                    if (!target) return;
+                    target.width = source.width || target.width;
+                    target.height = source.height || target.height;
+                    try {
+                        target.getContext("2d").drawImage(source, 0, 0);
+                    } catch {
+                        /* tainted or webgl copy failed */
+                    }
+                });
+            },
+        });
+    }
+
     async captureVisibleStreetView() {
         const shell = this.dom.streetViewShell;
-        if (!shell || shell.hidden) throw new Error("거리뷰가 열린 뒤 다시 눌러 주세요.");
+        const view = this.dom.streetView;
+        if (!shell || shell.hidden || !view) throw new Error("거리뷰가 열린 뒤 다시 눌러 주세요.");
 
-        const width = Math.max(1, shell.clientWidth);
-        const height = Math.max(1, shell.clientHeight);
+        const width = Math.max(1, Math.round(view.clientWidth || shell.clientWidth));
+        const height = Math.max(1, Math.round(view.clientHeight || shell.clientHeight));
+        const scale = Math.min(2, window.devicePixelRatio || 1);
         const composed = document.createElement("canvas");
-        composed.width = width;
-        composed.height = height;
+        composed.width = Math.max(1, Math.round(width * scale));
+        composed.height = Math.max(1, Math.round(height * scale));
         const context = composed.getContext("2d");
+        context.setTransform(scale, 0, 0, scale, 0, 0);
         context.fillStyle = "#07110f";
         context.fillRect(0, 0, width, height);
 
+        shell.classList.add("is-capturing");
+        await this.waitFrames(3);
         let drewPanorama = false;
-        const sourceCanvases = [...this.dom.streetView.querySelectorAll("canvas")];
-        for (const canvas of sourceCanvases) {
-            if (canvas.closest(".photo-streetview-moon")) continue;
-            try {
-                const box = canvas.getBoundingClientRect();
-                const root = shell.getBoundingClientRect();
-                context.drawImage(canvas, box.left - root.left, box.top - root.top, box.width, box.height);
-                drewPanorama = true;
-            } catch {
-                drewPanorama = false;
-                break;
+        try {
+            const rootRect = view.getBoundingClientRect();
+            for (const canvas of this.panoramaCanvases()) {
+                try {
+                    if (this.drawLiveCanvas(context, canvas, rootRect)) drewPanorama = true;
+                } catch {
+                    drewPanorama = false;
+                    break;
+                }
             }
-        }
+            if (!drewPanorama || this.captureLooksEmpty(context, width, height)) {
+                const shot = await this.captureWithHtml2Canvas(view, width, height);
+                if (shot) {
+                    context.setTransform(1, 0, 0, 1, 0, 0);
+                    context.clearRect(0, 0, composed.width, composed.height);
+                    context.drawImage(shot, 0, 0, composed.width, composed.height);
+                    context.setTransform(scale, 0, 0, scale, 0, 0);
+                    drewPanorama = !this.captureLooksEmpty(context, width, height);
+                }
+            }
 
-        if (!drewPanorama && window.html2canvas) {
-            const shot = await window.html2canvas(shell, {
-                backgroundColor: "#07110f",
-                useCORS: true,
-                allowTaint: false,
-                logging: false,
-                scale: 1,
-                ignoreElements: (element) => element.classList?.contains("photo-streetview-caption"),
-            });
-            context.drawImage(shot, 0, 0, width, height);
-            drewPanorama = true;
-        }
-
-        if (!drewPanorama) throw new Error("지금 화면을 담지 못했습니다. 브라우저를 바꾼 뒤 다시 시도해 주세요.");
-
-        const moon = this.dom.streetViewMoon;
-        const moonCanvas = this.dom.streetViewMoonCanvas;
-        if (moon && moonCanvas && !moon.hidden) {
-            const box = moonCanvas.getBoundingClientRect();
-            const root = shell.getBoundingClientRect();
-            context.drawImage(moonCanvas, box.left - root.left, box.top - root.top, box.width, box.height);
+            if (!drewPanorama || this.captureLooksEmpty(context, width, height)) {
+                throw new Error("거리뷰 화면을 담지 못했습니다. 거리뷰가 완전히 뜬 뒤 다시 눌러 주세요.");
+            }
+        } finally {
+            shell.classList.remove("is-capturing");
         }
 
         const dataUrl = this.canvasToJpeg(composed);
         if (!dataUrl || dataUrl.length < 800) throw new Error("화면 캡처가 비어 있습니다.");
-        return dataUrl;
+        return { image: dataUrl, width, height };
     }
 
     setEveningProgress(title, detail) {
@@ -738,13 +890,13 @@ export class PhotoComposer {
         this.eveningStartedAt = Date.now();
         this.setEveningProgress(
             "밤 장면을 만들고 있습니다",
-            "화면을 담은 뒤 하늘을 밤으로 바꿉니다. 보통 20~40초 걸립니다.",
+            "화면을 담은 뒤 하늘을 밤으로 바꿉니다. 보통 20~60초 걸립니다.",
         );
         this.eveningTimer = window.setInterval(() => {
             if (!this.eveningBusy) return;
             this.setEveningProgress(
                 this.dom.eveningProgressTitle?.textContent || "밤 장면을 만들고 있습니다",
-                this.eveningProgressDetail || "보통 20~40초 걸립니다.",
+                this.eveningProgressDetail || "보통 20~60초 걸립니다.",
             );
         }, 1000);
     }
@@ -775,6 +927,12 @@ export class PhotoComposer {
 
     async generateEveningScene() {
         if (this.eveningBusy) return;
+        try {
+            const config = await fetch("/api/config").then((response) => response.json());
+            this.eveningEnabled = Boolean(config?.evening_scene?.enabled);
+        } catch {
+            /* keep previous flag */
+        }
         if (!this.eveningEnabled) {
             this.showToast("GEMINI_API_KEY를 .env에 넣고 서버를 다시 실행해 주세요.", true);
             return;
@@ -793,12 +951,13 @@ export class PhotoComposer {
         this.setEveningLoading(true);
         try {
             this.showEveningView(false);
-            await new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
-            this.setEveningProgress("지금 화면을 담고 있습니다", "거리뷰에서 보이는 장면만 캡처합니다.");
+            await this.waitFrames(2);
+            this.setEveningProgress("지금 화면을 담고 있습니다", "지금 보이는 거리뷰만 잘라 담습니다.");
             const screenshot = await this.captureVisibleStreetView();
-            this.setEveningProgress("밤하늘을 그리고 있습니다", "건물과 도로는 유지합니다. 보통 20~40초 걸립니다.");
+            this.setEveningProgress("밤하늘을 그리고 있습니다", "실제 달 크기와 달빛으로 밤을 만듭니다. 보통 20~60초 걸립니다.");
             const location = this.streetView?.getLocation?.() || {};
             const pov = this.streetView?.getPov?.() || {};
+            const moon = this.moonPlacement();
             const response = await fetch("/api/evening-scene", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -810,7 +969,13 @@ export class PhotoComposer {
                     timezone: observer.timezone,
                     place_name: location.title || location.address || "",
                     view_heading_deg: pov.pan,
-                    image: screenshot,
+                    image: screenshot.image,
+                    image_width: screenshot.width,
+                    image_height: screenshot.height,
+                    moon_x_percent: moon?.x_percent,
+                    moon_y_percent: moon?.y_percent,
+                    moon_in_view: moon?.in_view,
+                    view_fov_deg: pov.fov,
                 }),
             });
             const result = await response.json();

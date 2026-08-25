@@ -48,6 +48,8 @@ class MoonSimulatorTestCase(unittest.TestCase):
         self.assertNotIn("이 방향으로 고개를 들면 됩니다".encode(), page.data)
         self.assertIn(b'id="appConfig"', page.data)
         self.assertIn(b'id="photoStreetView"', page.data)
+        self.assertIn("1시간씩 흐르게".encode(), page.data)
+        self.assertNotIn(b"photoMoonHiddenWarning", page.data)
         self.assertNotIn(b"KartaView", page.data)
         self.assertNotIn("현재 위치 찾기".encode(), page.data)
         self.assertNotIn("내 위치로 바로 계산".encode(), page.data)
@@ -209,19 +211,83 @@ class MoonSimulatorTestCase(unittest.TestCase):
         generate.assert_called_once()
 
     def test_evening_prompt_forbids_new_buildings(self):
-        from evening_scene import build_evening_prompt
+        from evening_scene import DEFAULT_MODEL, build_evening_prompt, closest_aspect_ratio
+
+        self.assertEqual(DEFAULT_MODEL, "gemini-3.1-flash-image")
+        self.assertEqual(closest_aspect_ratio(1600, 900), "16:9")
+        self.assertEqual(closest_aspect_ratio(1200, 900), "4:3")
+        self.assertEqual(closest_aspect_ratio(800, 800), "1:1")
 
         prompt = build_evening_prompt({
-            "position": {"altitude_deg": 32, "azimuth_deg": 140, "direction": "남동", "above_horizon": True},
-            "phase": {"name": "망", "illumination_percent": 99},
+            "position": {
+                "altitude_deg": 32,
+                "azimuth_deg": 140,
+                "direction": "남동",
+                "above_horizon": True,
+                "angular_diameter_deg": 0.52,
+            },
+            "phase": {"name": "보름달", "illumination_percent": 99, "angle_deg": 180},
             "sun_position": {"altitude_deg": -18},
+        }, {
+            "moon_in_view": True,
+            "moon_x_percent": 62.5,
+            "moon_y_percent": 18.0,
+            "view_fov_deg": 70,
         })
-        self.assertIn("Do not add any new buildings", prompt)
-        self.assertIn("Keep only the existing buildings", prompt)
-        self.assertIn("Obey real-world physics", prompt)
-        self.assertIn("real moon actually rose", prompt)
-        self.assertIn("night photograph", prompt)
+        self.assertIn("Using the provided street-view photograph", prompt)
+        self.assertIn("cropped screenshot", prompt)
+        self.assertIn("Keep everything else in the image exactly the same", prompt)
+        self.assertIn("Do not add, remove, move, or redesign any building", prompt)
+        self.assertIn("Do not invent architecture", prompt)
+        self.assertIn("blink comparison", prompt)
+        self.assertIn("physically real moon", prompt)
+        self.assertIn("62.5% from the left", prompt)
+        self.assertIn("full moon", prompt)
+        self.assertIn("0.52°", prompt)
+        self.assertIn("astronomical night", prompt)
+        self.assertIn("cool-white moonlight", prompt)
+        self.assertNotIn("already visible in this crop", prompt)
+        self.assertNotIn("IMAGE EDITING TASK", prompt)
         self.assertNotIn("evening photograph", prompt)
+        self.assertNotIn("realistic clouds", prompt)
+
+        hidden = build_evening_prompt({
+            "position": {"altitude_deg": -8, "azimuth_deg": 140, "direction": "남동", "above_horizon": False},
+            "phase": {"name": "보름달", "illumination_percent": 99},
+        })
+        self.assertIn("Do not add a moon", hidden)
+
+    def test_evening_scene_uses_nano_banana_2(self):
+        from evening_scene import generate_evening_scene
+
+        with patch("evening_scene.gemini_api_key", return_value="test-key"), patch(
+            "evening_scene._post_interaction",
+            return_value={"output_image": {"data": "ZmFrZQ==", "mime_type": "image/jpeg"}},
+        ) as post:
+            generate_evening_scene(
+                {
+                    "position": {"altitude_deg": 32, "azimuth_deg": 140, "above_horizon": True},
+                    "phase": {"name": "보름달", "illumination_percent": 99},
+                },
+                {"image": self._jpeg_stub()},
+                {
+                    "image_width": 1600,
+                    "image_height": 900,
+                    "moon_in_view": True,
+                    "moon_x_percent": 50,
+                    "moon_y_percent": 20,
+                },
+            )
+
+        body = post.call_args[0][1]
+        self.assertEqual(body["model"], "gemini-3.1-flash-image")
+        self.assertEqual(body["input"][0]["type"], "image")
+        self.assertEqual(body["input"][1]["type"], "text")
+        self.assertEqual(body["response_format"]["aspect_ratio"], "16:9")
+        self.assertEqual(body["generation_config"]["thinking_level"], "high")
+        self.assertIn("Keep everything else in the image exactly the same", body["input"][1]["text"])
+        self.assertIn("physically real moon", body["input"][1]["text"])
+        self.assertIn("50.0% from the left", body["input"][1]["text"])
 
 
 if __name__ == "__main__":

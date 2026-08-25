@@ -1922,6 +1922,12 @@ body.photo-modal-open {
     display: none;
 }
 
+.photo-streetview-shell.is-capturing .photo-streetview-toolbar,
+.photo-streetview-shell.is-capturing .photo-streetview-caption,
+.photo-streetview-shell.is-capturing .photo-streetview-moon {
+    visibility: hidden;
+}
+
 .photo-streetview {
     width: 100%;
     height: 100%;
@@ -1956,6 +1962,46 @@ body.photo-modal-open {
     font-size: 10px;
     font-weight: 800;
     letter-spacing: 0.04em;
+}
+
+.photo-streetview-toolbar {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: 46px;
+    z-index: 12;
+    pointer-events: auto;
+}
+
+.photo-hour-controls {
+    display: grid;
+    grid-template-columns: 1fr 1.35fr 1fr;
+    gap: 6px;
+    padding: 7px;
+    border: 1px solid var(--line-strong);
+    border-radius: 14px;
+    background: rgba(8, 20, 17, 0.92);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
+}
+
+.photo-hour-controls .photo-quick-button {
+    margin-top: 0;
+    min-height: 44px;
+    padding: 0 6px;
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.photo-hour-controls .photo-quick-button.is-play {
+    background: rgba(138, 242, 199, 0.22);
+    color: var(--mint);
+}
+
+.photo-hour-controls .photo-quick-button.is-playing {
+    background: var(--mint);
+    color: #07120f;
 }
 
 .photo-streetview-caption {
@@ -2387,8 +2433,7 @@ body.photo-modal-open {
     width: 100%;
     height: 100%;
     min-height: 280px;
-    display: grid;
-    grid-template-rows: minmax(0, 1fr) auto;
+    overflow: hidden;
     background: #050c0a;
 }
 
@@ -2399,30 +2444,34 @@ body.photo-modal-open {
 .photo-evening-result img {
     width: 100%;
     height: 100%;
-    object-fit: contain;
+    object-fit: cover;
+    object-position: center;
     background: #050c0a;
 }
 
-.photo-evening-result p {
-    margin: 0;
-    color: var(--muted);
-    font-size: 10px;
-    line-height: 1.45;
-}
-
-.photo-evening-toolbar {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 8px;
-    align-items: center;
-    padding: 8px 12px;
-}
-
 .photo-evening-save {
-    min-height: 36px;
-    padding: 0 12px;
-    font-size: 11px;
-    white-space: nowrap;
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 5;
+    min-width: 0;
+    min-height: 28px;
+    width: auto;
+    padding: 4px 10px;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(7, 18, 15, 0.62);
+    color: #f4fff9;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
+}
+
+.photo-evening-save:hover {
+    background: rgba(7, 18, 15, 0.82);
 }
 
 .photo-evening-progress {
@@ -3010,6 +3059,16 @@ body.photo-modal-open {
         padding: 10px;
     }
 
+    .photo-streetview-toolbar {
+        left: 8px;
+        right: 8px;
+        bottom: 10px;
+    }
+
+    .photo-streetview-caption {
+        display: none;
+    }
+
     .photo-preview-meta {
         min-height: 54px;
     }
@@ -3050,13 +3109,13 @@ body.photo-modal-open {
         font-size: 9px;
     }
 
-    .photo-evening-toolbar {
-        grid-template-columns: 1fr;
-    }
-
     .photo-evening-save {
-        width: 100%;
-        min-height: 44px;
+        top: 8px;
+        right: 8px;
+        min-height: 28px;
+        width: auto;
+        padding: 4px 10px;
+        font-size: 12px;
     }
 
     .photo-auto-info {

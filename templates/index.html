@@ -274,19 +274,24 @@
                                 <canvas id="photoStreetViewMoonCanvas"></canvas>
                                 <span>달</span>
                             </div>
+                            <div class="photo-streetview-toolbar">
+                                <div class="photo-hour-controls">
+                                    <button class="photo-quick-button" id="photoHourBackButton" type="button">1시간 전</button>
+                                    <button class="photo-quick-button is-play" id="photoHourPlayButton" type="button">1시간씩 흐르게</button>
+                                    <button class="photo-quick-button" id="photoHourForwardButton" type="button">1시간 후</button>
+                                </div>
+                            </div>
                             <p class="photo-streetview-caption">© NAVER 거리뷰 · 달을 하늘 위치에 올려 표시합니다. 이 화면은 저장하지 않습니다.</p>
                         </div>
                         <div class="photo-evening-result" id="photoEveningResult" hidden>
                             <img id="photoEveningImage" alt="지금 화면을 바탕으로 만든 예상 밤 장면">
-                            <div class="photo-evening-toolbar">
-                                <p id="photoEveningCaption">지금 보이는 화면을 바탕으로 만든 예상 밤 장면입니다.</p>
-                                <button class="button button-primary photo-evening-save" id="photoEveningSaveButton" type="button">이미지 저장</button>
-                            </div>
+                            <button class="photo-evening-save" id="photoEveningSaveButton" type="button" aria-label="이미지 저장">저장</button>
+                            <p id="photoEveningCaption" hidden>지금 보이는 화면을 바탕으로 만든 예상 밤 장면입니다.</p>
                         </div>
                         <div class="photo-evening-progress" id="photoEveningProgress" hidden>
                             <span class="loading-orbit" aria-hidden="true"></span>
                             <strong id="photoEveningProgressTitle">밤 장면을 만들고 있습니다</strong>
-                            <small id="photoEveningProgressMeta">화면을 담은 뒤 하늘을 밤으로 바꿉니다. 보통 20~40초 걸립니다.</small>
+                            <small id="photoEveningProgressMeta">화면을 담은 뒤 하늘을 밤으로 바꿉니다. 보통 20~60초 걸립니다.</small>
                         </div>
                     </div>
 

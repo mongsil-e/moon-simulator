@@ -23,10 +23,12 @@ export function clampStreetViewFov(value) {
 
 export function moonPovFromPosition(position, currentFov = 70) {
     const altitude = Number(position?.altitude_deg);
+    const tilt = Math.min(50, Math.max(-40, Number.isFinite(altitude) ? altitude : 0));
+    const needsWideSky = Number.isFinite(altitude) && altitude > 38;
     return {
         pan: azimuthToPan(position?.azimuth_deg),
-        tilt: Math.min(80, Math.max(-25, Number.isFinite(altitude) ? altitude : 0)),
-        fov: clampStreetViewFov(currentFov),
+        tilt,
+        fov: clampStreetViewFov(needsWideSky ? Math.max(Number(currentFov) || 70, 92) : currentFov),
     };
 }
 

@@ -73,6 +73,8 @@ const state = {
     requestController: null,
     toastTimer: null,
     playbackTimer: null,
+    hourlyPlayTimer: null,
+    hourlyPlayBusy: false,
     locationSource: "default",
     hasFocusedOnce: false,
     map: null,
@@ -158,6 +160,95 @@ function directionForHeading(heading) {
 function minuteFromIso(isoValue) {
     const match = String(isoValue).match(/T(\d{2}):(\d{2})/);
     return match ? Number(match[1]) * 60 + Number(match[2]) : 720;
+}
+
+
+function visibleHourlyPath(data = state.data) {
+    return (data?.hourly_path || []).filter((item) => item.above_horizon);
+}
+
+
+function firstVisibleMoonTime(data = state.data) {
+    const firstHour = visibleHourlyPath(data)[0];
+    if (firstHour?.time) return isoToInputValue(firstHour.time);
+    if (data?.events?.rise?.time) return isoToInputValue(data.events.rise.time);
+    const firstTrajectory = (data?.trajectory || []).find((item) => item.above_horizon);
+    return firstTrajectory?.time ? isoToInputValue(firstTrajectory.time) : "";
+}
+
+
+function updateHourPlayButton() {
+    const button = byId("photoHourPlayButton");
+    if (!button) return;
+    const playing = Boolean(state.hourlyPlayTimer);
+    button.textContent = playing ? "멈추기" : "1시간씩 흐르게";
+    button.classList.toggle("is-playing", playing);
+}
+
+
+function stopHourlyPlayback() {
+    if (state.hourlyPlayTimer) {
+        window.clearInterval(state.hourlyPlayTimer);
+        state.hourlyPlayTimer = null;
+    }
+    state.hourlyPlayBusy = false;
+    updateHourPlayButton();
+}
+
+
+async function jumpToFirstVisibleMoon() {
+    const visibleAt = firstVisibleMoonTime(state.data);
+    if (!visibleAt) {
+        showToast("이 날짜에는 달이 보이지 않습니다. 다른 날짜를 선택해 주세요.", true);
+        return false;
+    }
+    if (getDateTimeInputValue() === visibleAt) return true;
+    setDateTimeInputValue(visibleAt);
+    return requestObservation({ moveMap: true, focusMoon: true, openPhoto: false });
+}
+
+
+async function stepVisibleMoonHour(direction = 1) {
+    const visible = visibleHourlyPath();
+    if (!visible.length) {
+        showToast("이 날짜에는 달이 보이는 시간이 없습니다.", true);
+        stopHourlyPlayback();
+        return false;
+    }
+    const currentMs = new Date(state.activePosition?.time || getDateTimeInputValue()).getTime();
+    const next = direction > 0
+        ? visible.find((item) => new Date(item.time).getTime() > currentMs + 20 * 1000)
+        : [...visible].reverse().find((item) => new Date(item.time).getTime() < currentMs - 20 * 1000);
+    if (!next) {
+        showToast(direction > 0 ? "달이 지는 시각까지 왔습니다." : "달이 뜨는 첫 시각입니다.", true);
+        stopHourlyPlayback();
+        return false;
+    }
+    setDateTimeInputValue(isoToInputValue(next.time));
+    const completed = await requestObservation({ moveMap: false, focusMoon: true, openPhoto: false });
+    if (completed && !state.photoComposer?.dom?.modal?.hidden) {
+        state.photoComposer.scheduleLookAtMoon();
+    }
+    return completed;
+}
+
+
+function toggleHourlyPlayback() {
+    if (state.hourlyPlayTimer) {
+        stopHourlyPlayback();
+        return;
+    }
+    if (state.playbackTimer) togglePlayback();
+    const tick = async () => {
+        if (state.hourlyPlayBusy) return;
+        state.hourlyPlayBusy = true;
+        const moved = await stepVisibleMoonHour(1);
+        state.hourlyPlayBusy = false;
+        if (!moved) stopHourlyPlayback();
+    };
+    tick();
+    state.hourlyPlayTimer = window.setInterval(tick, 1600);
+    updateHourPlayButton();
 }
 
 
@@ -344,6 +435,7 @@ function togglePlayback() {
         return;
     }
 
+    stopHourlyPlayback();
     dom.playButton.classList.add("is-playing");
     dom.playButton.setAttribute("aria-label", "시간 흐름 멈추기");
     state.playbackTimer = window.setInterval(() => {
@@ -1228,8 +1320,20 @@ function bindInterface() {
     });
     dom.streetViewButton?.addEventListener("click", async () => {
         const completed = await requestObservation({ moveMap: true, focusMoon: true, openPhoto: false });
-        if (completed) state.photoComposer?.open();
+        if (!completed) return;
+        const jumped = await jumpToFirstVisibleMoon();
+        if (!jumped) return;
+        state.photoComposer?.open();
     });
+    byId("photoHourBackButton")?.addEventListener("click", () => {
+        stopHourlyPlayback();
+        stepVisibleMoonHour(-1);
+    });
+    byId("photoHourForwardButton")?.addEventListener("click", () => {
+        stopHourlyPlayback();
+        stepVisibleMoonHour(1);
+    });
+    byId("photoHourPlayButton")?.addEventListener("click", () => toggleHourlyPlayback());
     dom.nowButton?.addEventListener("click", useCurrentTime);
     dom.dateInput?.addEventListener("change", () => {
         requestObservation({ moveMap: true, focusMoon: true, openPhoto: false });
@@ -1274,7 +1378,9 @@ async function initialize() {
                 showToast,
                 onOpen: () => {
                     if (state.playbackTimer) togglePlayback();
+                    stopHourlyPlayback();
                 },
+                onClose: () => stopHourlyPlayback(),
                 onRemotePhoto: (photo) => {
                     const previous = state.nearbyPhoto;
                     state.nearbyPhoto = photo;
