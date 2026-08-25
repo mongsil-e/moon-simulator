@@ -2434,8 +2434,14 @@ body.photo-modal-open {
     position: relative;
     z-index: 1;
     width: 100%;
-    height: 100%;
-    min-height: 280px;
+    height: auto;
+    min-height: 0;
+    max-height: 100%;
+    align-self: center;
+    justify-self: center;
+    display: grid;
+    place-items: center;
+    aspect-ratio: var(--photo-capture-aspect-ratio, 16 / 9);
     overflow: hidden;
     background: #050c0a;
 }
@@ -2445,9 +2451,12 @@ body.photo-modal-open {
 }
 
 .photo-evening-result img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
     object-position: center;
     background: #050c0a;
 }
@@ -3055,11 +3064,15 @@ body.photo-modal-open {
     }
 
     .photo-workspace {
-        grid-template-rows: minmax(330px, 46dvh) minmax(0, 1fr);
+        grid-template-rows: minmax(420px, 58dvh) minmax(0, 1fr);
     }
 
     .photo-preview-stage {
         padding: 10px;
+    }
+
+    .photo-streetview-shell {
+        min-height: 0;
     }
 
     .photo-streetview-toolbar {

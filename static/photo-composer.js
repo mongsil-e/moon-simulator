@@ -5,7 +5,7 @@ import {
 } from "./naver-maps.js";
 
 const DEG_TO_RAD = Math.PI / 180;
-const STREET_VIEW_MOON_SCALE = 6;
+const STREET_VIEW_MOON_SCALE = 3;
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const byId = (id) => document.getElementById(id);
 
@@ -509,7 +509,7 @@ export class PhotoComposer {
         if (drawMoon) {
             const radius = Math.max(6, projection.radius * STREET_VIEW_MOON_SCALE);
             const canvas = this.dom.streetViewMoonCanvas;
-            const size = Math.max(16, Math.round(radius * 2));
+            const size = Math.max(12, Math.round(radius * 2));
             canvas.width = size;
             canvas.height = size;
             const context = canvas.getContext("2d");
@@ -829,6 +829,10 @@ export class PhotoComposer {
             this.showEveningView(false);
             this.setEveningProgress("지금 화면을 담고 있습니다", "브라우저에 보이는 거리뷰 영역만 잘라 담습니다.");
             const screenshot = await this.captureVisibleStreetView();
+            this.dom.eveningResult?.style.setProperty(
+                "--photo-capture-aspect-ratio",
+                `${screenshot.width} / ${screenshot.height}`,
+            );
             this.setEveningProgress("밤하늘을 그리고 있습니다", "실제 달 크기와 달빛으로 밤을 만듭니다. 보통 20~60초 걸립니다.");
             const location = this.streetView?.getLocation?.() || {};
             const pov = this.streetView?.getPov?.() || {};
