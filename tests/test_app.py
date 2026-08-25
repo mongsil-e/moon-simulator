@@ -234,28 +234,13 @@ class MoonSimulatorTestCase(unittest.TestCase):
             "moon_y_percent": 18.0,
             "view_fov_deg": 70,
         })
-        self.assertIn("Using the provided street-view photograph", prompt)
-        self.assertIn("cropped screenshot", prompt)
-        self.assertIn("Keep everything else in the image exactly the same", prompt)
-        self.assertIn("Do not add, remove, move, or redesign any building", prompt)
-        self.assertIn("Do not invent architecture", prompt)
-        self.assertIn("blink comparison", prompt)
-        self.assertIn("physically real moon", prompt)
-        self.assertIn("62.5% from the left", prompt)
-        self.assertIn("full moon", prompt)
-        self.assertIn("0.52°", prompt)
-        self.assertIn("astronomical night", prompt)
-        self.assertIn("cool-white moonlight", prompt)
-        self.assertNotIn("already visible in this crop", prompt)
-        self.assertNotIn("IMAGE EDITING TASK", prompt)
-        self.assertNotIn("evening photograph", prompt)
-        self.assertNotIn("realistic clouds", prompt)
-
-        hidden = build_evening_prompt({
-            "position": {"altitude_deg": -8, "azimuth_deg": 140, "direction": "남동", "above_horizon": False},
-            "phase": {"name": "보름달", "illumination_percent": 99},
-        })
-        self.assertIn("Do not add a moon", hidden)
+        self.assertEqual(
+            prompt,
+            "고화질로 생성하세요. 밤하늘만 사실적으로 구현하고, 달은 스티커나 아이콘이 아닌 실제 천체 사진처럼 "
+            "자연스러운 표면 질감, 크레이터와 입체감으로 표현하세요. "
+            "실제로 밤이 된 현장을 촬영한 것처럼 전체 장면을 자연스럽게 표현하세요. "
+            "나머지는 원본 그대로 유지하세요. 빛, 그림자, 반사 등 물리 법칙을 따르세요.",
+        )
 
     def test_evening_scene_uses_nano_banana_2(self):
         from evening_scene import generate_evening_scene
@@ -285,9 +270,13 @@ class MoonSimulatorTestCase(unittest.TestCase):
         self.assertEqual(body["input"][1]["type"], "text")
         self.assertEqual(body["response_format"]["aspect_ratio"], "16:9")
         self.assertEqual(body["generation_config"]["thinking_level"], "high")
-        self.assertIn("Keep everything else in the image exactly the same", body["input"][1]["text"])
-        self.assertIn("physically real moon", body["input"][1]["text"])
-        self.assertIn("50.0% from the left", body["input"][1]["text"])
+        self.assertEqual(
+            body["input"][1]["text"],
+            "고화질로 생성하세요. 밤하늘만 사실적으로 구현하고, 달은 스티커나 아이콘이 아닌 실제 천체 사진처럼 "
+            "자연스러운 표면 질감, 크레이터와 입체감으로 표현하세요. "
+            "실제로 밤이 된 현장을 촬영한 것처럼 전체 장면을 자연스럽게 표현하세요. "
+            "나머지는 원본 그대로 유지하세요. 빛, 그림자, 반사 등 물리 법칙을 따르세요.",
+        )
 
 
 if __name__ == "__main__":

@@ -1914,6 +1914,8 @@ body.photo-modal-open {
     width: 100%;
     height: 100%;
     min-height: 280px;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
     overflow: hidden;
     background: #07110f;
 }
@@ -1929,6 +1931,7 @@ body.photo-modal-open {
 }
 
 .photo-streetview {
+    min-height: 0;
     width: 100%;
     height: 100%;
 }
@@ -1965,11 +1968,11 @@ body.photo-modal-open {
 }
 
 .photo-streetview-toolbar {
-    position: absolute;
-    left: 10px;
-    right: 10px;
-    bottom: 46px;
+    position: relative;
     z-index: 12;
+    padding: 8px;
+    border-top: 1px solid var(--line);
+    background: rgba(5, 16, 13, 0.98);
     pointer-events: auto;
 }
 
@@ -1981,7 +1984,7 @@ body.photo-modal-open {
     border: 1px solid var(--line-strong);
     border-radius: 14px;
     background: rgba(8, 20, 17, 0.92);
-    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
+    box-shadow: none;
 }
 
 .photo-hour-controls .photo-quick-button {
@@ -2008,7 +2011,7 @@ body.photo-modal-open {
     position: absolute;
     left: 12px;
     right: 12px;
-    bottom: 12px;
+    bottom: 76px;
     z-index: 2;
     margin: 0;
     padding: 7px 10px;
@@ -3060,9 +3063,7 @@ body.photo-modal-open {
     }
 
     .photo-streetview-toolbar {
-        left: 8px;
-        right: 8px;
-        bottom: 10px;
+        padding: 8px;
     }
 
     .photo-streetview-caption {

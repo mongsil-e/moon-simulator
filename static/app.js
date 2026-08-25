@@ -135,6 +135,24 @@ function setDateTimeInputValue(value) {
 }
 
 
+function shiftInputDateTime(value, minutes) {
+    const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+    if (!match) return "";
+    const [, year, month, day, hour, minute] = match;
+    const shifted = new Date(Date.UTC(
+        Number(year),
+        Number(month) - 1,
+        Number(day),
+        Number(hour),
+        Number(minute) + Number(minutes || 0),
+    ));
+    return [
+        shifted.getUTCFullYear(), "-", pad(shifted.getUTCMonth() + 1), "-", pad(shifted.getUTCDate()),
+        "T", pad(shifted.getUTCHours()), ":", pad(shifted.getUTCMinutes()),
+    ].join("");
+}
+
+
 function timeFromIso(isoValue) {
     if (!isoValue) return "--:--";
     const match = String(isoValue).match(/T(\d{2}):(\d{2})/);
@@ -208,24 +226,17 @@ async function jumpToFirstVisibleMoon() {
 }
 
 
-async function stepVisibleMoonHour(direction = 1) {
-    const visible = visibleHourlyPath();
-    if (!visible.length) {
-        showToast("이 날짜에는 달이 보이는 시간이 없습니다.", true);
-        stopHourlyPlayback();
-        return false;
-    }
-    const currentMs = new Date(state.activePosition?.time || getDateTimeInputValue()).getTime();
-    const next = direction > 0
-        ? visible.find((item) => new Date(item.time).getTime() > currentMs + 20 * 1000)
-        : [...visible].reverse().find((item) => new Date(item.time).getTime() < currentMs - 20 * 1000);
+async function stepMoonHour(direction = 1) {
+    const current = isoToInputValue(state.activePosition?.time || getDateTimeInputValue());
+    const next = shiftInputDateTime(current, direction >= 0 ? 60 : -60);
     if (!next) {
-        showToast(direction > 0 ? "달이 지는 시각까지 왔습니다." : "달이 뜨는 첫 시각입니다.", true);
+        showToast("선택 시각을 확인해 주세요.", true);
         stopHourlyPlayback();
         return false;
     }
-    setDateTimeInputValue(isoToInputValue(next.time));
+    setDateTimeInputValue(next);
     const completed = await requestObservation({ moveMap: false, focusMoon: true, openPhoto: false });
+    if (!completed) setDateTimeInputValue(current);
     if (completed && !state.photoComposer?.dom?.modal?.hidden) {
         state.photoComposer.scheduleLookAtMoon();
     }
@@ -242,7 +253,7 @@ function toggleHourlyPlayback() {
     const tick = async () => {
         if (state.hourlyPlayBusy) return;
         state.hourlyPlayBusy = true;
-        const moved = await stepVisibleMoonHour(1);
+        const moved = await stepMoonHour(1);
         state.hourlyPlayBusy = false;
         if (!moved) stopHourlyPlayback();
     };
@@ -1327,11 +1338,11 @@ function bindInterface() {
     });
     byId("photoHourBackButton")?.addEventListener("click", () => {
         stopHourlyPlayback();
-        stepVisibleMoonHour(-1);
+        stepMoonHour(-1);
     });
     byId("photoHourForwardButton")?.addEventListener("click", () => {
         stopHourlyPlayback();
-        stepVisibleMoonHour(1);
+        stepMoonHour(1);
     });
     byId("photoHourPlayButton")?.addEventListener("click", () => toggleHourlyPlayback());
     dom.nowButton?.addEventListener("click", useCurrentTime);

@@ -324,25 +324,13 @@ def _moonlight_line(observation: dict, extras: dict | None) -> str:
 
 
 def build_evening_prompt(observation: dict, extras: dict | None = None) -> str:
-    extras = extras or {}
     return (
-        "The attached image is a cropped screenshot of exactly what is visible on screen, "
-        "a daytime street-view photograph with no moon in it. Edit THIS crop. "
-        "Using the provided street-view photograph, relight it into a physically correct night "
-        "for this date and time. Keep everything else in the image exactly the same, "
-        "preserving the original composition, geometry, and object identities. "
-        "This is a locked photo edit, not a new image, not a similar street, not a 3D rebuild. "
-        "Do not crop, zoom, pan, or change aspect ratio. "
-        "Do not add, remove, move, or redesign any building, window, sign, tree, car, road, "
-        "sidewalk, person, or street object. Do not invent architecture or landmarks. "
-        "Do not change the skyline silhouette. "
-        "ALLOWED CHANGES ONLY: "
-        f"1) {_sky_physics(observation)} "
-        f"2) {_moon_edit_instruction(observation, extras)} "
-        f"3) {_moonlight_line(observation, extras)} "
-        "A blink comparison with the input photo must keep the same street; only night lighting, "
-        "sky, and a physically sized moon may change. "
-        "Photoreal, no text, no UI, no watermark, no labels."
+        "고화질로 생성하세요. "
+        "밤하늘만 사실적으로 구현하고, 달은 스티커나 아이콘이 아닌 실제 천체 사진처럼 "
+        "자연스러운 표면 질감, 크레이터와 입체감으로 표현하세요. "
+        "실제로 밤이 된 현장을 촬영한 것처럼 전체 장면을 자연스럽게 표현하세요. "
+        "나머지는 원본 그대로 유지하세요. "
+        "빛, 그림자, 반사 등 물리 법칙을 따르세요."
     )
 
 
