@@ -183,11 +183,14 @@ def _sky_physics(observation: dict) -> str:
 
     if moon_up and illumination >= 90:
         wash = (
-            "Full moonlight physically washes the sky to a pale gray-blue; the Milky Way is invisible; "
-            "only the brightest stars remain."
+            "Even under a full moon, keep the sky deep charcoal-navy with only a restrained localized silver-gray "
+            "lift near the moon and horizon; the Milky Way is invisible and only the brightest stars remain."
         )
     elif moon_up and illumination >= 50:
-        wash = "Gibbous moonlight mildly brightens the sky; a handful of stars; not pitch black."
+        wash = (
+            "Gibbous moonlight creates only a faint localized lift around the moon; keep the wider sky deep navy "
+            "with a sparse handful of stars."
+        )
     elif moon_up and illumination >= 15:
         wash = (
             "Crescent moonlight is weak. The sky stays darker with more stars, but this is a city street "
@@ -198,10 +201,60 @@ def _sky_physics(observation: dict) -> str:
             "Little or no moonlight. Dark urban night: orange-brown light pollution near the horizon, "
             "a few stars higher up, no fantasy nebula."
         )
+    low_moon_scattering = ""
+    if moon_up and moon_alt is not None and moon_alt < 12:
+        low_moon_scattering = (
+            " Because the moon is low, aerosol and Rayleigh scattering create a localized warm haze around "
+            "the moon and its nearby horizon only; do not tint the entire sky yellow."
+        )
     return (
-        f"Follow atmospheric physics for {band}. {wash} "
+        f"Follow atmospheric physics for {band}. {wash}{low_moon_scattering} "
         "Sky luminance must increase slightly toward the horizon and stay darker at the zenith. "
+        "Keep the overall sky exposure low so the frame unmistakably reads as a genuinely dark night. Use a smooth "
+        "exposure roll-off and continuous atmospheric scattering, never a hard gradient. "
         "No purple CGI sky, no painted galaxy, no fake volumetric fog, no sunset."
+    )
+
+
+def _moon_visual_style(position: dict, phase: dict) -> str:
+    altitude = _finite_number(position.get("altitude_deg"))
+    illumination = _finite_number(phase.get("illumination_percent"))
+    if altitude is None:
+        color = "warm ivory to pale straw-yellow, matching a dark-adapted naked-eye view"
+    elif altitude < 8:
+        color = (
+            f"warm amber-gold at {altitude:.1f}° altitude, slightly dimmed and softened by the long atmospheric path"
+        )
+    elif altitude < 20:
+        color = f"soft pale gold at {altitude:.1f}° altitude, with mild atmospheric extinction"
+    else:
+        color = (
+            f"warm ivory to pale straw-yellow at {altitude:.1f}° altitude, matching a dark-adapted naked-eye view"
+        )
+
+    if illumination is None:
+        phase_exposure = "Preserve the guide moon's illuminated fraction and terminator orientation."
+    elif illumination < 3:
+        phase_exposure = (
+            "This is effectively a new moon: show at most extremely faint earthshine, never a bright yellow disc."
+        )
+    elif illumination < 45:
+        phase_exposure = (
+            "Keep the illuminated crescent bright but textured; the dark portion may show very faint earthshine "
+            "and must not become a solid black cutout."
+        )
+    elif illumination < 90:
+        phase_exposure = (
+            "Keep the illuminated portion bright but textured and preserve the spherical, softly curved terminator."
+        )
+    else:
+        phase_exposure = (
+            "Let the full or near-full disc be the brightest object while retaining visible maria and subtle crater "
+            "contrast instead of clipping to featureless white."
+        )
+    return (
+        f"Render the lunar disc {color}, never saturated lemon-yellow, orange neon, or cold blue-white. "
+        f"{phase_exposure} Preserve the phase and terminator orientation already present in the guide moon."
     )
 
 
@@ -239,8 +292,9 @@ def _moon_edit_instruction(observation: dict, extras: dict | None) -> str:
         f"at {location}{size}. Keep both its center and visible diameter fixed; the displayed diameter is "
         "intentionally enlarged to three times the strict angular-size rendering for legibility, so do not "
         "shrink, move, duplicate, or erase it. Give the lunar disc convincing maria and restrained crater detail, "
-        "a crisp but atmospherically integrated limb, and bright natural luminance without turning it into a flat "
-        "white circle or sticker. Add only a subtle compact atmospheric aureole appropriate to its altitude, with "
+        f"a crisp but atmospherically integrated limb. {_moon_visual_style(position, phase)} "
+        "The guide is a temporary spatial reference: regenerate its synthetic pixels rather than preserving their "
+        "sticker-like appearance. Add only a subtle compact atmospheric aureole appropriate to its altitude, with "
         "no oversized bloom, lens flare, neon ring, or fantasy glow. Existing buildings, terrain, branches, haze, "
         "and clouds must occlude or soften the moon naturally where they overlap it. Do not add any other moon, "
         "planet, or moon-like light anywhere else, and do not move the skyline or crop the image."
@@ -258,23 +312,56 @@ def _moonlight_line(observation: dict, extras: dict | None) -> str:
         )
     illumination = _finite_number(phase.get("illumination_percent")) or 0
     strength = (
-        "clearly visible cool-white moonlight with a gentle exposure lift and restrained silver highlights"
+        "restrained near-neutral moonlight with no overall exposure lift and only small silver edge highlights"
         if illumination >= 85
-        else "visible cool moonlight with restrained highlights"
+        else "very subtle near-neutral moonlight with sparse silver highlights"
         if illumination >= 40
-        else "subtle silvery moonlight"
+        else "barely perceptible silvery moonlight"
     )
     left = _percent(extras.get("moon_x_percent"))
-    direction = (
-        f"from the moon at {left}% from the left of the frame"
-        if left
-        else "from the moon's position in the sky"
+    top = _percent(extras.get("moon_y_percent"))
+    altitude = _finite_number(position.get("altitude_deg"))
+    azimuth = _finite_number(position.get("azimuth_deg"))
+    screen_coordinate = (
+        f"at {left}% from the left and {top}% from the top of the frame"
+        if left is not None and top is not None
+        else "at the calculated position in the frame"
     )
+    sky_coordinate = ""
+    if altitude is not None and azimuth is not None:
+        sky_coordinate = f", altitude {altitude:.1f}° and azimuth {azimuth:.1f}°"
+    direction = (
+        f"from the moon {screen_coordinate}{sky_coordinate}"
+    )
+    if altitude is None:
+        shadow_length = "with lengths consistent with the moon's elevation"
+    elif altitude < 15:
+        shadow_length = "as long, shallow-angle shadows because the moon is low"
+    elif altitude < 45:
+        shadow_length = "as moderately long shadows consistent with its mid-altitude elevation"
+    else:
+        shadow_length = "as shorter, tighter shadows because the moon is high"
+
+    if illumination >= 85:
+        shadow_contrast = "subtle and slightly darker than the already-dark surroundings, never graphic black"
+    elif illumination >= 40:
+        shadow_contrast = "very soft and low-contrast"
+    else:
+        shadow_contrast = "almost imperceptible"
     return (
         f"Light the existing scene with {strength} {direction}. "
-        "Make that moonlight readable on upward-facing existing surfaces while keeping the image unmistakably "
-        "nighttime rather than daylight or blue hour. Shadows of the existing buildings and trees fall away from "
-        "the moon, with realistic softness and contrast. "
+        "The warm-looking lunar disc and the light it casts are not the same color: on adapted nighttime surfaces, "
+        "direct moonlight should read as neutral to faintly silver-blue, not as a yellow floodlight. Only surfaces "
+        "with a clear line of sight to the moon receive direct light; moon-occluded surfaces retain ambient sky and "
+        "existing artificial light. Do not lift the overall scene exposure: keep most facades, vegetation, asphalt, "
+        "and distant detail in deep low-luminance shadow, with only slight separation on moon-facing edges and "
+        "upward-facing planes. The result must remain unmistakably nighttime rather than daylight or blue hour. "
+        "Cast shadows must extend directly away from the "
+        f"moon's projected direction {shadow_length}; make them {shadow_contrast}, with a narrow natural penumbra. "
+        "Add only sparse, dim directional moon glints where pre-existing glass, metal, glossy paint, wet pavement, "
+        "or water can physically reflect it toward the camera. Reflection size and sharpness must follow surface roughness and "
+        "viewing angle; matte concrete, dry asphalt, and foliage receive diffuse shading, never mirror reflections. "
+        "Moon reflections must not create broad bright pools or illuminate unrelated surfaces. "
         "Do not redraw architecture. Do not add new streetlights, new signs, or extra window lights."
     )
 
@@ -287,7 +374,7 @@ def build_evening_prompt(observation: dict, extras: dict | None = None) -> str:
         "crop, perspective, composition, geometry, spatial relationships, and every existing scene element. "
         "Do not add, remove, duplicate, replace, relocate, reshape, or redesign any building, vehicle, person, "
         "tree, road, sign, terrain feature, object, or structure. Do not invent new streetlights, illuminated "
-        "windows, signs, reflections, or environmental details. "
+        "windows, signs, or environmental details. "
         "Render the sky as a natural, photographically credible night sky while preserving all existing "
         "foreground and background content. Apply physically based nighttime illumination to the existing scene. "
         f"ATMOSPHERE: {_sky_physics(observation)} "
@@ -295,8 +382,12 @@ def build_evening_prompt(observation: dict, extras: dict | None = None) -> str:
         f"LIGHTING: {_moonlight_line(observation, extras)} "
         "All shading, occlusion, cast-shadow direction, shadow softness, ambient "
         "illumination, exposure, atmospheric scattering, and reflections must obey real-world optics and material "
-        "properties. Reflections may appear only on pre-existing reflective surfaces and must match their material, "
-        "viewing angle, and the moonlight direction. Avoid exaggerated brightness, crushed blacks, artificial glow, "
+        "properties. Use a low-key dark-night exposure: the moon may be bright, but the scene as a whole must remain "
+        "dark, with restrained midtones and no lifted HDR-style shadows. Retain lunar surface texture in the highlights "
+        "and allow nonessential shadow detail to fall away naturally without crushing everything to uniform black. "
+        "Reflections may appear only on "
+        "pre-existing reflective surfaces and must match their material, viewing angle, and the moonlight direction. "
+        "Avoid exaggerated brightness, crushed blacks, artificial glow, "
         "excessive bloom, fantasy colors, cinematic light beams, conflicting light sources, painterly rendering, "
         "or a CGI appearance. The result must look like an authentic photograph of the same unchanged location "
         "captured under real nighttime conditions."
