@@ -2,6 +2,7 @@ import datetime as dt
 import json
 import os
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from app import app
@@ -64,6 +65,10 @@ class MoonSimulatorTestCase(unittest.TestCase):
         self.assertIn(b'id="photoEveningButton"', page.data)
         self.assertIn(b'id="photoEveningSaveButton"', page.data)
         self.assertIn(b'id="photoEveningProgress"', page.data)
+        self.assertIn("휴대폰과 PC".encode(), page.data)
+        self.assertNotIn(b'id="photoScreenCaptureInput"', page.data)
+        self.assertNotIn("화면 공유 창".encode(), page.data)
+        self.assertIn(b"html2canvas", page.data)
 
     def test_config_hides_naver_secret_and_exposes_client_id(self):
         with patch.dict(
@@ -91,6 +96,31 @@ class MoonSimulatorTestCase(unittest.TestCase):
         self.assertNotIn("secret", json.dumps(payload))
         self.assertIn("evening_scene", payload)
         self.assertNotIn("GEMINI", json.dumps(payload).upper())
+
+    def test_evening_scene_uses_mobile_browser_capture(self):
+        source = (Path(__file__).resolve().parents[1] / "static" / "photo-composer.js").read_text(encoding="utf-8")
+
+        self.assertIn("window.html2canvas(view", source)
+        self.assertIn("captureVisibleStreetView", source)
+        self.assertIn("renderStreetViewPanorama", source)
+        self.assertIn("panoramaHeadingOffset", source)
+        self.assertIn("this.drawMoonGuide(captured, moon)", source)
+        self.assertIn("const diameter = this.moonDisplayDiameter(projection)", source)
+        self.assertIn("this.dom.eveningImage.src = generatedSource", source)
+        self.assertIn("screenshot.moon", source)
+        self.assertNotIn("compositeMoon", source)
+        self.assertNotIn("getDisplayMedia", source)
+        self.assertNotIn("photoScreenCaptureInput", source)
+        self.assertNotIn('/api/screen-capture', source)
+        self.assertNotIn("createScreenCaptureMarker", source)
+        self.assertNotIn("captureVisibleScreen", source)
+
+    def test_server_screen_capture_endpoint_was_removed(self):
+        response = self.client.post(
+            "/api/screen-capture",
+            environ_base={"REMOTE_ADDR": "192.168.0.25"},
+        )
+        self.assertEqual(response.status_code, 404)
 
     def test_current_position_and_daily_trajectory(self):
         response = self.observation()
@@ -194,14 +224,22 @@ class MoonSimulatorTestCase(unittest.TestCase):
                 "notice": "지금 보이는 화면을 바탕으로 만든 예상 밤 장면입니다.",
             },
         ) as generate:
-            response = self.client.post("/api/evening-scene", json={
-                "lat": 37.5665,
-                "lon": 126.9780,
-                "datetime": "2026-07-13T21:00",
-                "timezone": "Asia/Seoul",
-                "place_name": "서울시청",
-                "image": self._jpeg_stub(),
-            })
+            response = self.client.post(
+                "/api/evening-scene",
+                json={
+                    "lat": 37.5665,
+                    "lon": 126.9780,
+                    "datetime": "2026-07-13T21:00",
+                    "timezone": "Asia/Seoul",
+                    "place_name": "서울시청",
+                    "image": self._jpeg_stub(),
+                    "moon_x_percent": 48.6,
+                    "moon_y_percent": 27.4,
+                    "moon_diameter_px": 12,
+                    "moon_diameter_percent": 2.6,
+                },
+                environ_base={"REMOTE_ADDR": "192.168.0.25"},
+            )
 
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
@@ -209,6 +247,11 @@ class MoonSimulatorTestCase(unittest.TestCase):
         self.assertEqual(payload["mime_type"], "image/jpeg")
         self.assertIn("밤 장면", payload["notice"])
         generate.assert_called_once()
+        extras = generate.call_args[0][2]
+        self.assertEqual(extras["moon_x_percent"], 48.6)
+        self.assertEqual(extras["moon_y_percent"], 27.4)
+        self.assertEqual(extras["moon_diameter_px"], 12)
+        self.assertEqual(extras["moon_diameter_percent"], 2.6)
 
     def test_evening_prompt_forbids_new_buildings(self):
         from evening_scene import DEFAULT_MODEL, build_evening_prompt, closest_aspect_ratio
@@ -232,17 +275,18 @@ class MoonSimulatorTestCase(unittest.TestCase):
             "moon_in_view": True,
             "moon_x_percent": 62.5,
             "moon_y_percent": 18.0,
+            "moon_diameter_percent": 1.2,
             "view_fov_deg": 70,
         })
-        self.assertEqual(
-            prompt,
-            "고화질로 생성하세요. 단, 구도와 달의 위치는 절대 변경하지 마세요. "
-            "밤하늘만 사실적으로 구현하고, 달은 스티커나 아이콘이 아닌 실제 천체 사진처럼 보이도록 하세요. "
-            "실제로 밤이 된 현장을 촬영한 것처럼 전체 장면에 물리적으로 자연스럽게 표현하세요. "
-            "실제 밤하늘을 사진 찍은 것처럼 달의 크기가 너무 커지지 않도록 하세요. "
-            "달의 위치를 변경하지 말고 그대로 유지하세요. 나머지는 원본 그대로 유지하세요. "
-            "새로운 건물, 사람, 차, 구조물 등을 생성하지 마세요. 빛, 그림자, 반사 등 물리 법칙을 따르세요.",
-        )
+        self.assertIn("Treat the input image as the sole source of truth", prompt)
+        self.assertIn("Do not add, remove, duplicate, replace, relocate, reshape, or redesign", prompt)
+        self.assertIn("visible guide moon", prompt)
+        self.assertIn("photorealistic astronomical", prompt)
+        self.assertIn("62.5% from the left and 18.0% from the top", prompt)
+        self.assertIn("diameter of 1.2% of the image width", prompt)
+        self.assertIn("intentionally enlarged to three times", prompt)
+        self.assertIn("subtle compact atmospheric aureole", prompt)
+        self.assertIn("must obey real-world optics and material properties", prompt)
 
     def test_evening_scene_uses_nano_banana_2(self):
         from evening_scene import generate_evening_scene
@@ -263,6 +307,7 @@ class MoonSimulatorTestCase(unittest.TestCase):
                     "moon_in_view": True,
                     "moon_x_percent": 50,
                     "moon_y_percent": 20,
+                    "moon_diameter_percent": 0.8,
                 },
             )
 
@@ -272,15 +317,12 @@ class MoonSimulatorTestCase(unittest.TestCase):
         self.assertEqual(body["input"][1]["type"], "text")
         self.assertEqual(body["response_format"]["aspect_ratio"], "16:9")
         self.assertEqual(body["generation_config"]["thinking_level"], "high")
-        self.assertEqual(
-            body["input"][1]["text"],
-            "고화질로 생성하세요. 단, 구도와 달의 위치는 절대 변경하지 마세요. "
-            "밤하늘만 사실적으로 구현하고, 달은 스티커나 아이콘이 아닌 실제 천체 사진처럼 보이도록 하세요. "
-            "실제로 밤이 된 현장을 촬영한 것처럼 전체 장면에 물리적으로 자연스럽게 표현하세요. "
-            "실제 밤하늘을 사진 찍은 것처럼 달의 크기가 너무 커지지 않도록 하세요. "
-            "달의 위치를 변경하지 말고 그대로 유지하세요. 나머지는 원본 그대로 유지하세요. "
-            "새로운 건물, 사람, 차, 구조물 등을 생성하지 마세요. 빛, 그림자, 반사 등 물리 법칙을 따르세요.",
-        )
+        prompt = body["input"][1]["text"]
+        self.assertIn("Perform a strictly constrained, high-resolution photorealistic edit", prompt)
+        self.assertIn("50.0% from the left and 20.0% from the top", prompt)
+        self.assertIn("diameter of 0.8% of the image width", prompt)
+        self.assertIn("Replace that guide with exactly one photorealistic astronomical", prompt)
+        self.assertIn("gentle exposure lift", prompt)
 
 
 if __name__ == "__main__":

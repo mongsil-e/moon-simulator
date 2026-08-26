@@ -487,6 +487,11 @@ export class PhotoComposer {
         if (this.loaded) this.updateStreetViewMoon();
     }
 
+    moonDisplayDiameter(projection) {
+        const radius = Math.max(6, projection.radius * STREET_VIEW_MOON_SCALE);
+        return Math.max(12, Math.round(radius * 2));
+    }
+
     updateStreetViewMoon() {
         if (!this.loaded || !this.streetView || this.dom.streetViewShell.hidden) {
             this.dom.streetViewMoon.hidden = true;
@@ -507,9 +512,8 @@ export class PhotoComposer {
         const drawMoon = position.above_horizon && projection.canDraw;
         this.dom.streetViewMoon.hidden = !drawMoon;
         if (drawMoon) {
-            const radius = Math.max(6, projection.radius * STREET_VIEW_MOON_SCALE);
             const canvas = this.dom.streetViewMoonCanvas;
-            const size = Math.max(12, Math.round(radius * 2));
+            const size = this.moonDisplayDiameter(projection);
             canvas.width = size;
             canvas.height = size;
             const context = canvas.getContext("2d");
@@ -654,24 +658,36 @@ export class PhotoComposer {
         else if (this.loaded && !this.dom.modal.hidden) this.startMoonTracking();
     }
 
-    canvasToJpeg(canvas, quality = 0.92) {
-        const maxWidth = 1600;
-        let { width, height } = canvas;
-        if (!width || !height) return "";
-        if (width > maxWidth) {
-            height = Math.round((height * maxWidth) / width);
-            width = maxWidth;
+    moonPlacement() {
+        const position = this.getPosition();
+        const pov = this.streetView?.getPov?.();
+        const view = this.dom.streetView;
+        const shell = this.dom.streetViewShell;
+        const width = Math.max(1, view?.clientWidth || shell?.clientWidth || 1);
+        const height = Math.max(1, view?.clientHeight || shell?.clientHeight || 1);
+        if (!position || !pov) {
+            return {
+                width,
+                height,
+                in_view: false,
+                x_percent: null,
+                y_percent: null,
+                diameter_px: null,
+                diameter_percent: null,
+            };
         }
-        const out = document.createElement("canvas");
-        out.width = width;
-        out.height = height;
-        const context = out.getContext("2d");
-        context.drawImage(canvas, 0, 0, width, height);
-        try {
-            return out.toDataURL("image/jpeg", quality);
-        } catch {
-            throw new Error("화면을 이미지로 담을 수 없습니다. 거리뷰가 완전히 뜬 뒤 다시 시도해 주세요.");
-        }
+        const projection = projectMoonOnStreetView(position, pov, width, height);
+        // 생성 결과의 달도 거리뷰에서 확인한 안내 달과 같은 3배 표시 크기를 사용한다.
+        const diameter = this.moonDisplayDiameter(projection);
+        return {
+            width: projection.width,
+            height: projection.height,
+            in_view: Boolean(position.above_horizon && projection.canDraw),
+            x_percent: (projection.x / projection.width) * 100,
+            y_percent: (projection.y / projection.height) * 100,
+            diameter_px: diameter,
+            diameter_percent: (diameter / projection.width) * 100,
+        };
     }
 
     waitFrames(count = 2) {
@@ -688,58 +704,235 @@ export class PhotoComposer {
         });
     }
 
-    moonPlacement() {
-        const position = this.getPosition();
-        const pov = this.streetView?.getPov?.();
-        const view = this.dom.streetView;
-        const shell = this.dom.streetViewShell;
-        const width = Math.max(1, view?.clientWidth || shell?.clientWidth || 1);
-        const height = Math.max(1, view?.clientHeight || shell?.clientHeight || 1);
-        if (!position || !pov) {
-            return { width, height, in_view: false, x_percent: null, y_percent: null };
+    canvasToJpeg(canvas, quality = 0.92) {
+        const maxEdge = 1600;
+        const sourceWidth = Number(canvas?.width || 0);
+        const sourceHeight = Number(canvas?.height || 0);
+        if (!sourceWidth || !sourceHeight) throw new Error("거리뷰 화면을 담지 못했습니다.");
+
+        const scale = Math.min(1, maxEdge / sourceWidth, maxEdge / sourceHeight);
+        const width = Math.max(1, Math.round(sourceWidth * scale));
+        const height = Math.max(1, Math.round(sourceHeight * scale));
+        const output = document.createElement("canvas");
+        output.width = width;
+        output.height = height;
+        const context = output.getContext("2d");
+        context.fillStyle = "#07110f";
+        context.fillRect(0, 0, width, height);
+        context.drawImage(canvas, 0, 0, width, height);
+
+        let image;
+        try {
+            image = output.toDataURL("image/jpeg", quality);
+        } catch {
+            throw new Error("화면을 이미지로 담을 수 없습니다. 거리뷰가 완전히 뜬 뒤 다시 시도해 주세요.");
         }
-        const projection = projectMoonOnStreetView(position, pov, width, height);
+        if (!image || image.length < 800) throw new Error("거리뷰 화면을 담지 못했습니다.");
+        return { image, width, height };
+    }
+
+    panoramaFaceBaseUrl() {
+        const faceImage = [...(this.dom.streetView?.querySelectorAll("img") || [])].find((image) => {
+            const source = image.currentSrc || image.src || "";
+            return /\/\d+\/T\/[frblud](?:\?.*)?$/i.test(source);
+        });
+        const source = faceImage?.currentSrc || faceImage?.src || "";
+        const match = source.match(/^(.*\/)[frblud](?:\?.*)?$/i);
+        return match?.[1] || "";
+    }
+
+    panoramaHeadingOffset(pov) {
+        const faceHeadings = { f: 0, r: 90, b: 180, l: 270 };
+        const offsets = [];
+        for (const image of this.dom.streetView?.querySelectorAll("img") || []) {
+            const source = image.currentSrc || image.src || "";
+            const face = source.match(/\/([frbl])(?:\?.*)?$/i)?.[1]?.toLowerCase();
+            if (!face) continue;
+            const transform = window.getComputedStyle(image.parentElement).transform;
+            const values = transform.match(/^matrix3d\((.+)\)$/)?.[1]
+                ?.split(",")
+                .map((value) => Number(value.trim()));
+            if (!values || values.length !== 16 || values.some((value) => !Number.isFinite(value))) continue;
+            const screenAngle = (Math.atan2(values[8], values[10]) * 180) / Math.PI;
+            const cameraCubeHeading = faceHeadings[face] + screenAngle;
+            offsets.push(((cameraCubeHeading - Number(pov?.pan || 0)) * Math.PI) / 180);
+        }
+        if (!offsets.length) return null;
+        const sin = offsets.reduce((sum, angle) => sum + Math.sin(angle), 0);
+        const cos = offsets.reduce((sum, angle) => sum + Math.cos(angle), 0);
+        return (Math.atan2(sin, cos) * 180) / Math.PI;
+    }
+
+    imagePixels(image) {
+        const canvas = document.createElement("canvas");
+        canvas.width = image.naturalWidth || image.width;
+        canvas.height = image.naturalHeight || image.height;
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        context.drawImage(image, 0, 0);
         return {
-            width: projection.width,
-            height: projection.height,
-            in_view: Boolean(position.above_horizon && projection.canDraw),
-            x_percent: (projection.x / projection.width) * 100,
-            y_percent: (projection.y / projection.height) * 100,
+            width: canvas.width,
+            height: canvas.height,
+            data: context.getImageData(0, 0, canvas.width, canvas.height).data,
         };
+    }
+
+    async renderStreetViewPanorama(width, height, pov, headingOffset = null) {
+        const baseUrl = this.panoramaFaceBaseUrl();
+        if (!baseUrl) throw new Error("파노라마 원본 면을 찾지 못했습니다.");
+
+        const faceCodes = ["f", "r", "b", "l", "u", "d"];
+        const loaded = await Promise.all(faceCodes.map(async (face) => [
+            face,
+            this.imagePixels(await this.loadImage(`${baseUrl}${face}`, "anonymous")),
+        ]));
+        const faces = Object.fromEntries(loaded);
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(width));
+        canvas.height = Math.max(1, Math.round(height));
+        const context = canvas.getContext("2d");
+        const output = context.createImageData(canvas.width, canvas.height);
+
+        const resolvedHeadingOffset = Number.isFinite(headingOffset)
+            ? headingOffset
+            : this.panoramaHeadingOffset(pov);
+        if (!Number.isFinite(resolvedHeadingOffset)) throw new Error("파노라마 방향 기준을 찾지 못했습니다.");
+        const pan = ((Number(pov?.pan || 0) + resolvedHeadingOffset) * Math.PI) / 180;
+        const tilt = (Number(pov?.tilt || 0) * Math.PI) / 180;
+        const fov = (clamp(Number(pov?.fov) || 70, 20, 100) * Math.PI) / 180;
+        const tanHalfHorizontal = Math.tan(fov / 2);
+        const tanHalfVertical = tanHalfHorizontal * (canvas.height / canvas.width);
+        const cosPan = Math.cos(pan);
+        const sinPan = Math.sin(pan);
+        const cosTilt = Math.cos(tilt);
+        const sinTilt = Math.sin(tilt);
+        const forward = [sinPan * cosTilt, sinTilt, cosPan * cosTilt];
+        const right = [cosPan, 0, -sinPan];
+        const up = [-sinPan * sinTilt, cosTilt, -cosPan * sinTilt];
+
+        const writePixel = (targetIndex, face, u, v) => {
+            const source = faces[face];
+            const px = clamp(Math.round(u * (source.width - 1)), 0, source.width - 1);
+            const py = clamp(Math.round(v * (source.height - 1)), 0, source.height - 1);
+            const sourceIndex = (py * source.width + px) * 4;
+            output.data[targetIndex] = source.data[sourceIndex];
+            output.data[targetIndex + 1] = source.data[sourceIndex + 1];
+            output.data[targetIndex + 2] = source.data[sourceIndex + 2];
+            output.data[targetIndex + 3] = 255;
+        };
+
+        for (let py = 0; py < canvas.height; py += 1) {
+            const vertical = (1 - (2 * (py + 0.5)) / canvas.height) * tanHalfVertical;
+            for (let px = 0; px < canvas.width; px += 1) {
+                const horizontal = ((2 * (px + 0.5)) / canvas.width - 1) * tanHalfHorizontal;
+                const x = forward[0] + right[0] * horizontal + up[0] * vertical;
+                const y = forward[1] + right[1] * horizontal + up[1] * vertical;
+                const z = forward[2] + right[2] * horizontal + up[2] * vertical;
+                const ax = Math.abs(x);
+                const ay = Math.abs(y);
+                const az = Math.abs(z);
+                const targetIndex = (py * canvas.width + px) * 4;
+
+                if (az >= ax && az >= ay) {
+                    if (z >= 0) writePixel(targetIndex, "f", (x / az + 1) / 2, (1 - y / az) / 2);
+                    else writePixel(targetIndex, "b", (-x / az + 1) / 2, (1 - y / az) / 2);
+                } else if (ax >= ay) {
+                    if (x >= 0) writePixel(targetIndex, "r", (-z / ax + 1) / 2, (1 - y / ax) / 2);
+                    else writePixel(targetIndex, "l", (z / ax + 1) / 2, (1 - y / ax) / 2);
+                } else if (y >= 0) {
+                    writePixel(targetIndex, "u", (x / ay + 1) / 2, (z / ay + 1) / 2);
+                } else {
+                    writePixel(targetIndex, "d", (x / ay + 1) / 2, (1 - z / ay) / 2);
+                }
+            }
+        }
+
+        context.putImageData(output, 0, 0);
+        return canvas;
     }
 
     async captureVisibleStreetView() {
         const shell = this.dom.streetViewShell;
         const view = this.dom.streetView;
-        if (!shell || shell.hidden || !view) throw new Error("거리뷰가 열린 뒤 다시 눌러 주세요.");
-        if (!window.html2canvas) throw new Error("화면 캡처 모듈을 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요.");
-
-        await this.waitFrames(3);
-        const viewRect = view.getBoundingClientRect();
-        const captured = await window.html2canvas(view, {
-            backgroundColor: "#07110f",
-            useCORS: true,
-            allowTaint: false,
-            logging: false,
-            scale: Math.min(2, window.devicePixelRatio || 1),
-        });
-        const moon = this.dom.streetViewMoon;
-        const moonCanvas = this.dom.streetViewMoonCanvas;
-        if (moon && moonCanvas && !moon.hidden && viewRect.width > 0 && viewRect.height > 0) {
-            const moonRect = moonCanvas.getBoundingClientRect();
-            const scaleX = captured.width / viewRect.width;
-            const scaleY = captured.height / viewRect.height;
-            captured.getContext("2d").drawImage(
-                moonCanvas,
-                (moonRect.left - viewRect.left) * scaleX,
-                (moonRect.top - viewRect.top) * scaleY,
-                moonRect.width * scaleX,
-                moonRect.height * scaleY,
-            );
+        if (!this.loaded || !shell || shell.hidden || !view) {
+            throw new Error("거리뷰가 열린 뒤 다시 눌러 주세요.");
         }
-        const dataUrl = this.canvasToJpeg(captured);
-        if (!dataUrl || dataUrl.length < 800) throw new Error("거리뷰 화면을 담지 못했습니다.");
-        return { image: dataUrl, width: captured.width, height: captured.height };
+        await this.waitFrames(3);
+        const rect = view.getBoundingClientRect();
+        if (rect.width < 80 || rect.height < 80) {
+            throw new Error("거리뷰 영역이 너무 작습니다. 거리뷰를 크게 연 뒤 다시 시도해 주세요.");
+        }
+
+        const moon = this.moonPlacement();
+        const pov = { ...(this.streetView?.getPov?.() || {}) };
+        const headingOffset = this.panoramaHeadingOffset(pov);
+        const captureScale = Math.max(
+            1,
+            Math.min(2, window.devicePixelRatio || 1, 1600 / Math.max(rect.width, rect.height)),
+        );
+        let captured;
+        try {
+            captured = await this.renderStreetViewPanorama(
+                rect.width * captureScale,
+                rect.height * captureScale,
+                pov,
+                headingOffset,
+            );
+        } catch {
+            if (!window.html2canvas) {
+                throw new Error("화면 캡처 모듈을 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요.");
+            }
+            try {
+                captured = await window.html2canvas(view, {
+                    backgroundColor: "#07110f",
+                    useCORS: true,
+                    allowTaint: false,
+                    logging: false,
+                    scale: captureScale,
+                    scrollX: -window.scrollX,
+                    scrollY: -window.scrollY,
+                });
+            } catch {
+                throw new Error("거리뷰 화면을 담지 못했습니다. 거리뷰가 완전히 뜬 뒤 다시 시도해 주세요.");
+            }
+        }
+
+        this.drawMoonGuide(captured, moon);
+        const screenshot = this.canvasToJpeg(captured);
+        return {
+            ...screenshot,
+            moon: {
+                ...moon,
+                diameter_px: (screenshot.width * Number(moon.diameter_percent || 0)) / 100,
+            },
+            pov,
+        };
+    }
+
+    loadImage(source, crossOrigin = "") {
+        return new Promise((resolve, reject) => {
+            const image = new Image();
+            if (crossOrigin) image.crossOrigin = crossOrigin;
+            image.onload = () => resolve(image);
+            image.onerror = () => reject(new Error("완성된 이미지를 불러오지 못했습니다."));
+            image.src = source;
+        });
+    }
+
+    drawMoonGuide(canvas, moon) {
+        if (!moon?.in_view) return;
+        const xPercent = Number(moon.x_percent);
+        const yPercent = Number(moon.y_percent);
+        const diameterPercent = Number(moon.diameter_percent);
+        if (![xPercent, yPercent, diameterPercent].every(Number.isFinite)) return;
+
+        const width = canvas.width;
+        const height = canvas.height;
+        const context = canvas.getContext("2d");
+        this.drawMoon(context, {
+            x: (width * xPercent) / 100,
+            y: (height * yPercent) / 100,
+            radius: Math.max(2, (width * clamp(diameterPercent, 0.1, 8)) / 200),
+        });
     }
 
     setEveningProgress(title, detail) {
@@ -823,20 +1016,19 @@ export class PhotoComposer {
             this.showToast("달 위치 계산이 끝난 뒤 다시 눌러 주세요.", true);
             return;
         }
-
         this.setEveningLoading(true);
         try {
             this.showEveningView(false);
-            this.setEveningProgress("지금 화면을 담고 있습니다", "브라우저에 보이는 거리뷰 영역만 잘라 담습니다.");
+            this.setEveningProgress("지금 화면을 담고 있습니다", "이 기기의 브라우저에 보이는 거리뷰 영역만 담습니다.");
             const screenshot = await this.captureVisibleStreetView();
             this.dom.eveningResult?.style.setProperty(
                 "--photo-capture-aspect-ratio",
                 `${screenshot.width} / ${screenshot.height}`,
             );
-            this.setEveningProgress("밤하늘을 그리고 있습니다", "실제 달 크기와 달빛으로 밤을 만듭니다. 보통 20~60초 걸립니다.");
+            this.setEveningProgress("달과 밤하늘을 자연스럽게 만들고 있습니다", "표시된 위치의 달을 실제 밤하늘처럼 다듬습니다. 보통 20~60초 걸립니다.");
             const location = this.streetView?.getLocation?.() || {};
-            const pov = this.streetView?.getPov?.() || {};
-            const moon = this.moonPlacement();
+            const pov = screenshot.pov || {};
+            const moon = screenshot.moon || {};
             const response = await fetch("/api/evening-scene", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -853,6 +1045,8 @@ export class PhotoComposer {
                     image_height: screenshot.height,
                     moon_x_percent: moon?.x_percent,
                     moon_y_percent: moon?.y_percent,
+                    moon_diameter_px: moon?.diameter_px,
+                    moon_diameter_percent: moon?.diameter_percent,
                     moon_in_view: moon?.in_view,
                     view_fov_deg: pov.fov,
                 }),
@@ -860,8 +1054,9 @@ export class PhotoComposer {
             const result = await response.json();
             if (!response.ok) throw new Error(result.error || "밤 장면을 만들지 못했습니다.");
 
-            this.setEveningProgress("완성한 이미지를 불러오는 중입니다", "잠시만 기다려 주세요.");
-            this.dom.eveningImage.src = `data:${result.mime_type || "image/jpeg"};base64,${result.image}`;
+            this.setEveningProgress("완성 이미지를 불러오고 있습니다", "Gemini가 만든 달과 달빛을 확인하고 있습니다.");
+            const generatedSource = `data:${result.mime_type || "image/jpeg"};base64,${result.image}`;
+            this.dom.eveningImage.src = generatedSource;
             this.dom.eveningCaption.textContent = result.notice || "지금 보이는 화면을 바탕으로 만든 예상 밤 장면입니다.";
             try {
                 if (this.dom.eveningImage.decode) await this.dom.eveningImage.decode();

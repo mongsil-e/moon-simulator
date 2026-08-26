@@ -65,7 +65,7 @@ def evening_scene_enabled() -> bool:
 def parse_screenshot(payload: dict) -> tuple[str, str]:
     raw = str(payload.get("image") or payload.get("screenshot") or "").strip()
     if not raw:
-        raise ValueError("지금 보이는 화면을 담지 못했습니다. 거리뷰가 열린 뒤 다시 눌러 주세요.")
+        raise ValueError("현재 화면을 담지 못했습니다. 거리뷰가 화면에 보이도록 한 뒤 다시 눌러 주세요.")
 
     mime_type = "image/jpeg"
     data = raw
@@ -81,7 +81,7 @@ def parse_screenshot(payload: dict) -> tuple[str, str]:
         raise ValueError("화면 캡처 형식이 올바르지 않습니다.") from exc
 
     if len(decoded) < 800:
-        raise ValueError("화면 캡처가 비어 있습니다. 거리뷰가 완전히 뜬 뒤 다시 시도해 주세요.")
+        raise ValueError("화면 캡처가 비어 있습니다. 거리뷰가 완전히 보인 뒤 다시 시도해 주세요.")
     if len(decoded) > MAX_IMAGE_BYTES:
         raise ValueError("화면 캡처가 너무 큽니다. 창을 조금 줄인 뒤 다시 시도해 주세요.")
 
@@ -205,62 +205,6 @@ def _sky_physics(observation: dict) -> str:
     )
 
 
-def _terminator_line(phase: dict) -> str:
-    name = _english_phase(phase.get("name"))
-    angle = _finite_number(phase.get("angle_deg"))
-    illumination = _finite_number(phase.get("illumination_percent"))
-    lit = (
-        f"{illumination:.0f}% of the disc is sunlit"
-        if illumination is not None
-        else "the sunlit fraction matches this phase"
-    )
-    if angle is None:
-        side = "Draw the correct terminator for this phase as seen from the northern hemisphere."
-    elif angle < 11 or angle >= 349:
-        side = "This is essentially a new moon: do not draw a bright disc."
-    elif angle < 180:
-        side = "Northern hemisphere: the RIGHT side of the disc is sunlit (waxing)."
-    elif angle <= 191:
-        side = "Full moon: the whole earth-facing disc is sunlit, with no cartoon outline."
-    else:
-        side = "Northern hemisphere: the LEFT side of the disc is sunlit (waning)."
-    return (
-        f"It is a {name}; {lit}. {side} "
-        "The terminator is a soft physical shadow on a sphere, not a flat sticker or Pac-Man shape. "
-        "Show real lunar maria and craters. If the dark part is visible, use faint earthshine, not a black cutout."
-    )
-
-
-def _moon_appearance(altitude: float | None) -> str:
-    if altitude is None:
-        return "Cool white-gray lunar albedo, like a real telephoto moon, not neon yellow."
-    if altitude < 8:
-        return (
-            f"Altitude {altitude:.1f}°: strong atmospheric scattering makes it dimmer and warm yellow-orange, "
-            "with only a mild horizon haze. No giant bloom."
-        )
-    if altitude < 20:
-        return (
-            f"Altitude {altitude:.1f}°: pale gold-white from remaining atmosphere. Tiny natural halo at most."
-        )
-    return (
-        f"Altitude {altitude:.1f}°: cool white-gray lunar disc, sharp limb against the sky, "
-        "no large glow, no lens flare, no 3D sphere floating in front of the camera."
-    )
-
-
-def _moon_size_line(observation: dict, extras: dict) -> str:
-    angular = _finite_number((observation.get("position") or {}).get("angular_diameter_deg")) or 0.5
-    fov = _finite_number(extras.get("view_fov_deg")) or 70.0
-    width_pct = max(0.3, min(2.5, (angular / max(fov, 1.0)) * 100.0))
-    return (
-        f"Physical apparent diameter is {angular:.2f}° in a {fov:.0f}° wide street-view field of view, "
-        f"so the moon disc must be about {width_pct:.1f}% of the image width — a small distant object, "
-        "exactly like a real night photograph from a phone or street camera. "
-        "NEVER a large decorative moon, never an oversized CGI orb."
-    )
-
-
 def _moon_edit_instruction(observation: dict, extras: dict | None) -> str:
     extras = extras or {}
     position = observation.get("position") or {}
@@ -271,25 +215,35 @@ def _moon_edit_instruction(observation: dict, extras: dict | None) -> str:
         in_view = above
     if not above or not in_view:
         return (
-            "The moon is not in this view. Do not add a moon, glowing orb, planet, or extra sky light."
+            "The moon is outside this crop. The generated image must contain no visible moon, glowing orb, "
+            "planet, halo, or decorative celestial object."
         )
 
-    altitude = _finite_number(position.get("altitude_deg"))
     left = _percent(extras.get("moon_x_percent"))
     top = _percent(extras.get("moon_y_percent"))
-    location = (
-        f"Place its center at {left}% from the left and {top}% from the top of this crop. "
-        if left and top
-        else "Place it in the sky at the calculated moon position for this camera. "
+    diameter = _percent(extras.get("moon_diameter_percent"))
+    phase_name = _english_phase(phase.get("name"))
+    illumination = _finite_number(phase.get("illumination_percent"))
+    phase_detail = (
+        f"a {phase_name} with {illumination:.0f}% illumination"
+        if illumination is not None
+        else f"a {phase_name}"
     )
+    location = "the calculated camera coordinate"
+    if left is not None and top is not None:
+        location = f"{left}% from the left and {top}% from the top"
+    size = f", with a diameter of {diameter}% of the image width" if diameter is not None else ""
     return (
-        "There is no moon in the input photo. Add exactly one physically real moon. "
-        f"{location}"
-        f"{_moon_size_line(observation, extras)} "
-        f"{_terminator_line(phase)} "
-        f"{_moon_appearance(altitude)} "
-        "Do not add a second moon. If that coordinate sits on a building, keep the building and put the moon "
-        "in the nearest visible sky at the same horizontal position."
+        "The supplied image already contains exactly one visible guide moon at the calculated target. "
+        f"Replace that guide with exactly one photorealistic astronomical moon: {phase_detail}, centered precisely "
+        f"at {location}{size}. Keep both its center and visible diameter fixed; the displayed diameter is "
+        "intentionally enlarged to three times the strict angular-size rendering for legibility, so do not "
+        "shrink, move, duplicate, or erase it. Give the lunar disc convincing maria and restrained crater detail, "
+        "a crisp but atmospherically integrated limb, and bright natural luminance without turning it into a flat "
+        "white circle or sticker. Add only a subtle compact atmospheric aureole appropriate to its altitude, with "
+        "no oversized bloom, lens flare, neon ring, or fantasy glow. Existing buildings, terrain, branches, haze, "
+        "and clouds must occlude or soften the moon naturally where they overlap it. Do not add any other moon, "
+        "planet, or moon-like light anywhere else, and do not move the skyline or crop the image."
     )
 
 
@@ -304,11 +258,11 @@ def _moonlight_line(observation: dict, extras: dict | None) -> str:
         )
     illumination = _finite_number(phase.get("illumination_percent")) or 0
     strength = (
-        "strong cool-white moonlight"
+        "clearly visible cool-white moonlight with a gentle exposure lift and restrained silver highlights"
         if illumination >= 85
-        else "moderate cool moonlight"
+        else "visible cool moonlight with restrained highlights"
         if illumination >= 40
-        else "weak silvery moonlight"
+        else "subtle silvery moonlight"
     )
     left = _percent(extras.get("moon_x_percent"))
     direction = (
@@ -317,22 +271,35 @@ def _moonlight_line(observation: dict, extras: dict | None) -> str:
         else "from the moon's position in the sky"
     )
     return (
-        f"Existing surfaces may receive {strength} {direction}. "
-        "Shadows of the existing buildings and trees fall away from the moon. "
+        f"Light the existing scene with {strength} {direction}. "
+        "Make that moonlight readable on upward-facing existing surfaces while keeping the image unmistakably "
+        "nighttime rather than daylight or blue hour. Shadows of the existing buildings and trees fall away from "
+        "the moon, with realistic softness and contrast. "
         "Do not redraw architecture. Do not add new streetlights, new signs, or extra window lights."
     )
 
 
 def build_evening_prompt(observation: dict, extras: dict | None = None) -> str:
+    extras = extras or {}
     return (
-        "고화질로 생성하세요. 단, 구도와 달의 위치는 절대 변경하지 마세요. "
-        "밤하늘만 사실적으로 구현하고, 달은 스티커나 아이콘이 아닌 실제 천체 사진처럼 보이도록 하세요. "
-        "실제로 밤이 된 현장을 촬영한 것처럼 전체 장면에 물리적으로 자연스럽게 표현하세요. "
-        "실제 밤하늘을 사진 찍은 것처럼 달의 크기가 너무 커지지 않도록 하세요. "
-        "달의 위치를 변경하지 말고 그대로 유지하세요. "
-        "나머지는 원본 그대로 유지하세요. "
-        "새로운 건물, 사람, 차, 구조물 등을 생성하지 마세요. "
-        "빛, 그림자, 반사 등 물리 법칙을 따르세요."
+        "Perform a strictly constrained, high-resolution photorealistic edit of the supplied image. "
+        "Treat the input image as the sole source of truth. Preserve the original camera position, framing, "
+        "crop, perspective, composition, geometry, spatial relationships, and every existing scene element. "
+        "Do not add, remove, duplicate, replace, relocate, reshape, or redesign any building, vehicle, person, "
+        "tree, road, sign, terrain feature, object, or structure. Do not invent new streetlights, illuminated "
+        "windows, signs, reflections, or environmental details. "
+        "Render the sky as a natural, photographically credible night sky while preserving all existing "
+        "foreground and background content. Apply physically based nighttime illumination to the existing scene. "
+        f"ATMOSPHERE: {_sky_physics(observation)} "
+        f"MOON PLACEMENT CONTRACT: {_moon_edit_instruction(observation, extras)} "
+        f"LIGHTING: {_moonlight_line(observation, extras)} "
+        "All shading, occlusion, cast-shadow direction, shadow softness, ambient "
+        "illumination, exposure, atmospheric scattering, and reflections must obey real-world optics and material "
+        "properties. Reflections may appear only on pre-existing reflective surfaces and must match their material, "
+        "viewing angle, and the moonlight direction. Avoid exaggerated brightness, crushed blacks, artificial glow, "
+        "excessive bloom, fantasy colors, cinematic light beams, conflicting light sources, painterly rendering, "
+        "or a CGI appearance. The result must look like an authentic photograph of the same unchanged location "
+        "captured under real nighttime conditions."
     )
 
 
@@ -366,7 +333,7 @@ def _friendly_api_error(status: int, detail: str) -> str:
     if status == 404:
         return "이 키에서 해당 이미지 모델을 쓸 수 없습니다."
     if status == 400:
-        return "이미지 생성 요청이 거부되었습니다. 거리뷰가 완전히 뜬 뒤 다시 시도해 주세요."
+        return "이미지 생성 요청이 거부되었습니다. 화면 캡처가 끝난 뒤 다시 시도해 주세요."
     return f"이미지 생성 API가 거부했습니다. ({status})"
 
 
@@ -432,7 +399,7 @@ def generate_evening_scene(observation: dict, screenshot: dict, extras: dict | N
                 return {
                     "mime_type": out_mime,
                     "image": out_data,
-                    "notice": "지금 보이는 거리뷰를 그대로 두고 하늘만 밤으로 바꾼 예상 장면입니다. 원본 거리뷰는 저장하지 않습니다.",
+                    "notice": "현재 화면에 보이는 거리뷰와 달을 함께 전달해 만든 예상 밤 장면입니다. 원본 화면 캡처는 저장하지 않습니다.",
                 }
             except RuntimeError as extra:
                 last_error = extra

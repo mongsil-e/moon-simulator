@@ -449,6 +449,8 @@ def evening_scene():
             "image_height": data.get("image_height"),
             "moon_x_percent": data.get("moon_x_percent"),
             "moon_y_percent": data.get("moon_y_percent"),
+            "moon_diameter_px": data.get("moon_diameter_px"),
+            "moon_diameter_percent": data.get("moon_diameter_percent"),
             "moon_in_view": data.get("moon_in_view"),
             "view_fov_deg": data.get("view_fov_deg"),
         }
