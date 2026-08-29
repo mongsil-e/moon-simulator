@@ -278,23 +278,19 @@ class MoonSimulatorTestCase(unittest.TestCase):
             "moon_diameter_percent": 1.2,
             "view_fov_deg": 70,
         })
-        self.assertIn("Treat the input image as the sole source of truth", prompt)
-        self.assertIn("Do not add, remove, duplicate, replace, relocate, reshape, or redesign", prompt)
+        self.assertIn("high-resolution, photorealistic nighttime transformation", prompt)
+        self.assertIn("Preserve the exact camera angle, perspective, building layout", prompt)
         self.assertIn("visible guide moon", prompt)
-        self.assertIn("photorealistic astronomical", prompt)
+        self.assertIn("Replace that guide with an authentic, highly detailed astronomical moon", prompt)
         self.assertIn("62.5% from the left and 18.0% from the top", prompt)
-        self.assertIn("diameter of 1.2% of the image width", prompt)
-        self.assertIn("intentionally enlarged to three times", prompt)
-        self.assertIn("subtle compact atmospheric aureole", prompt)
+        self.assertIn("roughly 1.2% of the image width", prompt)
+        self.assertIn("Seamlessly integrate the moon into the night sky", prompt)
         self.assertIn("warm ivory to pale straw-yellow at 32.0° altitude", prompt)
-        self.assertIn("neutral to faintly silver-blue", prompt)
-        self.assertIn("moderately long shadows", prompt)
-        self.assertIn("surface roughness and viewing angle", prompt)
-        self.assertIn("Only surfaces with a clear line of sight to the moon", prompt)
-        self.assertIn("genuinely dark night", prompt)
-        self.assertIn("Do not lift the overall scene exposure", prompt)
-        self.assertIn("low-key dark-night exposure", prompt)
-        self.assertIn("must obey real-world optics and material properties", prompt)
+        self.assertIn("cool silver-blue moonlight sheen", prompt)
+        self.assertIn("deep velvety midnight blue and dark indigo night sky", prompt)
+        self.assertIn("natural warm city horizon glow", prompt)
+        self.assertIn("balanced, high-quality night photograph", prompt)
+        self.assertIn("DSLR-quality night photograph", prompt)
 
         low_moon_prompt = build_evening_prompt({
             "position": {"altitude_deg": 5, "azimuth_deg": 95, "above_horizon": True},
@@ -307,8 +303,7 @@ class MoonSimulatorTestCase(unittest.TestCase):
             "moon_diameter_percent": 1.5,
         })
         self.assertIn("warm amber-gold at 5.0° altitude", low_moon_prompt)
-        self.assertIn("localized warm haze", low_moon_prompt)
-        self.assertIn("long, shallow-angle shadows", low_moon_prompt)
+        self.assertIn("warm atmospheric haze around the moon", low_moon_prompt)
 
     def test_evening_scene_uses_nano_banana_2(self):
         from evening_scene import generate_evening_scene
@@ -340,13 +335,7 @@ class MoonSimulatorTestCase(unittest.TestCase):
         self.assertEqual(body["response_format"]["aspect_ratio"], "16:9")
         self.assertEqual(body["generation_config"]["thinking_level"], "high")
         prompt = body["input"][1]["text"]
-        self.assertIn("Perform a strictly constrained, high-resolution photorealistic edit", prompt)
+        self.assertIn("high-resolution, photorealistic nighttime transformation", prompt)
         self.assertIn("50.0% from the left and 20.0% from the top", prompt)
-        self.assertIn("diameter of 0.8% of the image width", prompt)
-        self.assertIn("Replace that guide with exactly one photorealistic astronomical", prompt)
-        self.assertIn("no overall exposure lift", prompt)
-        self.assertIn("retaining visible maria and subtle crater contrast", prompt)
-
-
 if __name__ == "__main__":
     unittest.main()

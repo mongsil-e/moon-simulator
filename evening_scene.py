@@ -158,61 +158,32 @@ def _english_phase(name: str) -> str:
 
 def _sky_physics(observation: dict) -> str:
     sun_alt = _finite_number((observation.get("sun_position") or {}).get("altitude_deg"))
-    illumination = _finite_number((observation.get("phase") or {}).get("illumination_percent")) or 0
     moon_alt = _finite_number((observation.get("position") or {}).get("altitude_deg"))
     moon_up = bool((observation.get("position") or {}).get("above_horizon")) and (moon_alt or 0) > 0
 
     if sun_alt is None or sun_alt <= -18:
-        band = (
-            "astronomical night: near-black to very dark navy sky, a little brighter and greyer "
-            "toward the horizon from airglow and urban light pollution"
-        )
+        sky_tone = "deep velvety midnight blue and dark indigo night sky"
     elif sun_alt <= -12:
-        band = (
-            "astronomical twilight: very dark blue-black sky, only a faint residual glow on the "
-            "sun's azimuth, no sunset orange"
-        )
+        sky_tone = "rich dark indigo twilight night sky with subtle depth"
     elif sun_alt <= -6:
-        band = (
-            "nautical twilight: deep blue night with a weak horizon band, not dusk, not blue hour"
-        )
+        sky_tone = "deep nautical blue night sky with a soft atmospheric gradient"
     else:
-        band = (
-            "civil twilight: dark blue twilight, not full night and not a sunset. No orange-pink sky"
-        )
+        sky_tone = "atmospheric deep dusk-blue sky"
 
-    if moon_up and illumination >= 90:
-        wash = (
-            "Even under a full moon, keep the sky deep charcoal-navy with only a restrained localized silver-gray "
-            "lift near the moon and horizon; the Milky Way is invisible and only the brightest stars remain."
-        )
-    elif moon_up and illumination >= 50:
-        wash = (
-            "Gibbous moonlight creates only a faint localized lift around the moon; keep the wider sky deep navy "
-            "with a sparse handful of stars."
-        )
-    elif moon_up and illumination >= 15:
-        wash = (
-            "Crescent moonlight is weak. The sky stays darker with more stars, but this is a city street "
-            "so keep a low orange-brown light-pollution glow near the horizon."
-        )
-    else:
-        wash = (
-            "Little or no moonlight. Dark urban night: orange-brown light pollution near the horizon, "
-            "a few stars higher up, no fantasy nebula."
-        )
+    stars = "Sprinkle a few faint, realistic stars in the upper clear sky without fantasy nebulas, purple tint, or artificial clouds."
+    horizon_glow = "Render a gentle, natural warm city horizon glow that seamlessly blends into the night sky."
+
     low_moon_scattering = ""
     if moon_up and moon_alt is not None and moon_alt < 12:
         low_moon_scattering = (
-            " Because the moon is low, aerosol and Rayleigh scattering create a localized warm haze around "
-            "the moon and its nearby horizon only; do not tint the entire sky yellow."
+            " Because the moon is near the horizon, add a soft, warm atmospheric haze around the moon and lower horizon."
         )
+
     return (
-        f"Follow atmospheric physics for {band}. {wash}{low_moon_scattering} "
-        "Sky luminance must increase slightly toward the horizon and stay darker at the zenith. "
-        "Keep the overall sky exposure low so the frame unmistakably reads as a genuinely dark night. Use a smooth "
-        "exposure roll-off and continuous atmospheric scattering, never a hard gradient. "
-        "No purple CGI sky, no painted galaxy, no fake volumetric fog, no sunset."
+        f"Render a clear, photorealistic night sky with a {sky_tone}. "
+        f"{horizon_glow}{low_moon_scattering} {stars} "
+        "Sky luminance should naturally graduate from the horizon to the darker zenith. "
+        "Avoid murky charcoal/grey tones, oversaturated fantasy purple hues, or harsh artificial sky gradients."
     )
 
 
@@ -220,42 +191,31 @@ def _moon_visual_style(position: dict, phase: dict) -> str:
     altitude = _finite_number(position.get("altitude_deg"))
     illumination = _finite_number(phase.get("illumination_percent"))
     if altitude is None:
-        color = "warm ivory to pale straw-yellow, matching a dark-adapted naked-eye view"
+        color = "warm ivory to pale gold"
     elif altitude < 8:
-        color = (
-            f"warm amber-gold at {altitude:.1f}° altitude, slightly dimmed and softened by the long atmospheric path"
-        )
+        color = f"warm amber-gold at {altitude:.1f}° altitude, with gentle atmospheric softening"
     elif altitude < 20:
-        color = f"soft pale gold at {altitude:.1f}° altitude, with mild atmospheric extinction"
+        color = f"soft pale gold at {altitude:.1f}° altitude"
     else:
-        color = (
-            f"warm ivory to pale straw-yellow at {altitude:.1f}° altitude, matching a dark-adapted naked-eye view"
-        )
+        color = f"warm ivory to pale straw-yellow at {altitude:.1f}° altitude"
 
     if illumination is None:
-        phase_exposure = "Preserve the guide moon's illuminated fraction and terminator orientation."
-    elif illumination < 3:
-        phase_exposure = (
-            "This is effectively a new moon: show at most extremely faint earthshine, never a bright yellow disc."
-        )
+        phase_desc = "Preserve the natural phase and terminator orientation."
+    elif illumination < 5:
+        phase_desc = "This is a subtle new moon with extremely faint earthshine."
     elif illumination < 45:
-        phase_exposure = (
-            "Keep the illuminated crescent bright but textured; the dark portion may show very faint earthshine "
-            "and must not become a solid black cutout."
+        phase_desc = (
+            "Render a luminous crescent with visible surface texture, showing delicate earthshine on the unlit portion."
         )
     elif illumination < 90:
-        phase_exposure = (
-            "Keep the illuminated portion bright but textured and preserve the spherical, softly curved terminator."
-        )
+        phase_desc = "Render a bright, textured gibbous moon with a soft curved terminator."
     else:
-        phase_exposure = (
-            "Let the full or near-full disc be the brightest object while retaining visible maria and subtle crater "
-            "contrast instead of clipping to featureless white."
+        phase_desc = (
+            "Render a luminous full or near-full disc with detailed lunar maria and crater texture, "
+            "retaining highlight contrast without clipping to flat white."
         )
-    return (
-        f"Render the lunar disc {color}, never saturated lemon-yellow, orange neon, or cold blue-white. "
-        f"{phase_exposure} Preserve the phase and terminator orientation already present in the guide moon."
-    )
+
+    return f"Render the lunar disc in a realistic {color}. {phase_desc}"
 
 
 def _moon_edit_instruction(observation: dict, extras: dict | None) -> str:
@@ -267,10 +227,7 @@ def _moon_edit_instruction(observation: dict, extras: dict | None) -> str:
     if in_view is None:
         in_view = above
     if not above or not in_view:
-        return (
-            "The moon is outside this crop. The generated image must contain no visible moon, glowing orb, "
-            "planet, halo, or decorative celestial object."
-        )
+        return "The moon is outside the current frame; do not render a visible moon disc or glowing orb."
 
     left = _percent(extras.get("moon_x_percent"))
     top = _percent(extras.get("moon_y_percent"))
@@ -278,26 +235,25 @@ def _moon_edit_instruction(observation: dict, extras: dict | None) -> str:
     phase_name = _english_phase(phase.get("name"))
     illumination = _finite_number(phase.get("illumination_percent"))
     phase_detail = (
-        f"a {phase_name} with {illumination:.0f}% illumination"
+        f"a photorealistic {phase_name} ({illumination:.0f}% illumination)"
         if illumination is not None
-        else f"a {phase_name}"
+        else f"a photorealistic {phase_name}"
     )
-    location = "the calculated camera coordinate"
+    location = "the designated target area"
     if left is not None and top is not None:
         location = f"{left}% from the left and {top}% from the top"
-    size = f", with a diameter of {diameter}% of the image width" if diameter is not None else ""
+    size_desc = f"roughly {diameter}% of the image width" if diameter is not None else "the guide diameter"
+
     return (
-        "The supplied image already contains exactly one visible guide moon at the calculated target. "
-        f"Replace that guide with exactly one photorealistic astronomical moon: {phase_detail}, centered precisely "
-        f"at {location}{size}. Keep both its center and visible diameter fixed; the displayed diameter is "
-        "intentionally enlarged to three times the strict angular-size rendering for legibility, so do not "
-        "shrink, move, duplicate, or erase it. Give the lunar disc convincing maria and restrained crater detail, "
-        f"a crisp but atmospherically integrated limb. {_moon_visual_style(position, phase)} "
-        "The guide is a temporary spatial reference: regenerate its synthetic pixels rather than preserving their "
-        "sticker-like appearance. Add only a subtle compact atmospheric aureole appropriate to its altitude, with "
-        "no oversized bloom, lens flare, neon ring, or fantasy glow. Existing buildings, terrain, branches, haze, "
-        "and clouds must occlude or soften the moon naturally where they overlap it. Do not add any other moon, "
-        "planet, or moon-like light anywhere else, and do not move the skyline or crop the image."
+        "The supplied image already contains a visible guide moon. "
+        "CRITICAL SCALE REQUIREMENT: Maintain the EXACT small scale, circular boundary, and diameter of the guide moon visible in the input image. "
+        "Do NOT enlarge, expand, or magnify the moon into a giant cinematic supermoon. It must remain a realistic, compact astronomical disc matching the guide circle's small footprint ("
+        f"{size_desc}). "
+        f"Replace that guide with an authentic, highly detailed astronomical moon: {phase_detail}, centered at {location}. "
+        f"{_moon_visual_style(position, phase)} "
+        "Seamlessly integrate the moon into the night sky with a soft, subtle natural atmospheric glow along its limb without expanding the disc size itself. "
+        "Existing foreground buildings, tree branches, power lines, or clouds must naturally occlude and overlap the moon with realistic edge blending. "
+        "Do not enlarge the moon, do not render extra floating orbs, and do not distort the skyline."
     )
 
 
@@ -305,92 +261,38 @@ def _moonlight_line(observation: dict, extras: dict | None) -> str:
     extras = extras or {}
     position = observation.get("position") or {}
     phase = observation.get("phase") or {}
-    if not position.get("above_horizon"):
-        return (
-            "No moonlight. Darken existing building and pavement pixels as a night color grade only. "
-            "Do not invent new streetlights or window lights."
-        )
-    illumination = _finite_number(phase.get("illumination_percent")) or 0
-    strength = (
-        "restrained near-neutral moonlight with no overall exposure lift and only small silver edge highlights"
-        if illumination >= 85
-        else "very subtle near-neutral moonlight with sparse silver highlights"
-        if illumination >= 40
-        else "barely perceptible silvery moonlight"
-    )
-    left = _percent(extras.get("moon_x_percent"))
-    top = _percent(extras.get("moon_y_percent"))
     altitude = _finite_number(position.get("altitude_deg"))
-    azimuth = _finite_number(position.get("azimuth_deg"))
-    screen_coordinate = (
-        f"at {left}% from the left and {top}% from the top of the frame"
-        if left is not None and top is not None
-        else "at the calculated position in the frame"
-    )
-    sky_coordinate = ""
-    if altitude is not None and azimuth is not None:
-        sky_coordinate = f", altitude {altitude:.1f}° and azimuth {azimuth:.1f}°"
-    direction = (
-        f"from the moon {screen_coordinate}{sky_coordinate}"
-    )
-    if altitude is None:
-        shadow_length = "with lengths consistent with the moon's elevation"
-    elif altitude < 15:
-        shadow_length = "as long, shallow-angle shadows because the moon is low"
-    elif altitude < 45:
-        shadow_length = "as moderately long shadows consistent with its mid-altitude elevation"
-    else:
-        shadow_length = "as shorter, tighter shadows because the moon is high"
+    illumination = _finite_number(phase.get("illumination_percent")) or 0
 
-    if illumination >= 85:
-        shadow_contrast = "subtle and slightly darker than the already-dark surroundings, never graphic black"
-    elif illumination >= 40:
-        shadow_contrast = "very soft and low-contrast"
+    if not position.get("above_horizon"):
+        moonlight_desc = "The moon is below the horizon; apply ambient nighttime city illumination."
     else:
-        shadow_contrast = "almost imperceptible"
+        moonlight_desc = (
+            "Cast a subtle, elegant cool silver-blue moonlight sheen onto moon-facing rooftops, upper architectural ledges, and upward surfaces."
+        )
+
     return (
-        f"Light the existing scene with {strength} {direction}. "
-        "The warm-looking lunar disc and the light it casts are not the same color: on adapted nighttime surfaces, "
-        "direct moonlight should read as neutral to faintly silver-blue, not as a yellow floodlight. Only surfaces "
-        "with a clear line of sight to the moon receive direct light; moon-occluded surfaces retain ambient sky and "
-        "existing artificial light. Do not lift the overall scene exposure: keep most facades, vegetation, asphalt, "
-        "and distant detail in deep low-luminance shadow, with only slight separation on moon-facing edges and "
-        "upward-facing planes. The result must remain unmistakably nighttime rather than daylight or blue hour. "
-        "Cast shadows must extend directly away from the "
-        f"moon's projected direction {shadow_length}; make them {shadow_contrast}, with a narrow natural penumbra. "
-        "Add only sparse, dim directional moon glints where pre-existing glass, metal, glossy paint, wet pavement, "
-        "or water can physically reflect it toward the camera. Reflection size and sharpness must follow surface roughness and "
-        "viewing angle; matte concrete, dry asphalt, and foliage receive diffuse shading, never mirror reflections. "
-        "Moon reflections must not create broad bright pools or illuminate unrelated surfaces. "
-        "Do not redraw architecture. Do not add new streetlights, new signs, or extra window lights."
+        "NIGHT LIGHTING & EXPOSURE: Transform the daytime lighting into a balanced, high-quality night photograph. "
+        "Preserve clear visibility and architectural textures on building facades, roadways, and sidewalks without crushing the scene into pitch black. "
+        "Neutralize and soften harsh daytime sun shadows into smooth, diffuse nighttime ambient lighting. "
+        "Naturally illuminate the urban scene: streetlamps, storefronts, and select building windows should display a warm, cozy ambient night glow that naturally reflects on streets and sidewalks. "
+        f"{moonlight_desc} "
+        "Do not introduce distorted, artificial high-contrast shadow stripes or conflicting harsh light beams."
     )
 
 
 def build_evening_prompt(observation: dict, extras: dict | None = None) -> str:
     extras = extras or {}
     return (
-        "Perform a strictly constrained, high-resolution photorealistic edit of the supplied image. "
-        "Treat the input image as the sole source of truth. Preserve the original camera position, framing, "
-        "crop, perspective, composition, geometry, spatial relationships, and every existing scene element. "
-        "Do not add, remove, duplicate, replace, relocate, reshape, or redesign any building, vehicle, person, "
-        "tree, road, sign, terrain feature, object, or structure. Do not invent new streetlights, illuminated "
-        "windows, signs, or environmental details. "
-        "Render the sky as a natural, photographically credible night sky while preserving all existing "
-        "foreground and background content. Apply physically based nighttime illumination to the existing scene. "
+        "Perform a high-resolution, photorealistic nighttime transformation of the supplied street view image. "
+        "Preserve the exact camera angle, perspective, building layout, street geometry, vehicle placement, and structural composition of the original scene. "
+        "Do not alter building architecture, road geometry, or fundamental scene layout. "
         f"ATMOSPHERE: {_sky_physics(observation)} "
-        f"MOON PLACEMENT CONTRACT: {_moon_edit_instruction(observation, extras)} "
+        f"MOON: {_moon_edit_instruction(observation, extras)} "
         f"LIGHTING: {_moonlight_line(observation, extras)} "
-        "All shading, occlusion, cast-shadow direction, shadow softness, ambient "
-        "illumination, exposure, atmospheric scattering, and reflections must obey real-world optics and material "
-        "properties. Use a low-key dark-night exposure: the moon may be bright, but the scene as a whole must remain "
-        "dark, with restrained midtones and no lifted HDR-style shadows. Retain lunar surface texture in the highlights "
-        "and allow nonessential shadow detail to fall away naturally without crushing everything to uniform black. "
-        "Reflections may appear only on "
-        "pre-existing reflective surfaces and must match their material, viewing angle, and the moonlight direction. "
-        "Avoid exaggerated brightness, crushed blacks, artificial glow, "
-        "excessive bloom, fantasy colors, cinematic light beams, conflicting light sources, painterly rendering, "
-        "or a CGI appearance. The result must look like an authentic photograph of the same unchanged location "
-        "captured under real nighttime conditions."
+        "Produce an authentic DSLR-quality night photograph with rich dynamic range, natural night ambiance, readable urban textures, and realistic optical properties. "
+        "Do not enlarge the moon into a giant supermoon: strictly maintain the small, realistic scale of the guide moon in the input image. "
+        "Avoid murky charcoal skies, pitch-black crushed shadows, sticker-like cutouts, painterly artifacts, or artificial CGI lighting."
     )
 
 
